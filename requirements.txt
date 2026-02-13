@@ -3,3 +3,4 @@ openpyxl
 Pillow
 supabase
 python-dotenv
+requests

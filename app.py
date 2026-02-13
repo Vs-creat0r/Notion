@@ -3,6 +3,7 @@ import uuid
 import base64
 import io
 import mimetypes
+import requests
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_file
 from openpyxl import Workbook
@@ -168,6 +169,16 @@ def api_create_entry():
     
     if entry:
          entry['photo_url'] = f"{url}/storage/v1/object/public/photos/{filename}"
+         
+         # Trigger n8n Webhook (Fire and forget)
+         webhook_url = os.environ.get('N8N_WEBHOOK_URL')
+         if webhook_url:
+             try:
+                 # Add the photo URL to the payload
+                 payload = entry.copy()
+                 requests.post(webhook_url, json=payload, timeout=5)
+             except Exception as e:
+                 print(f"Failed to trigger n8n webhook: {e}")
 
     return jsonify(entry), 201
 
