@@ -142,8 +142,9 @@ def api_create_entry():
             out_bytes,
             {"content-type": "image/jpeg"}
         )
-        if res.status_code != '200' and res.status_code != 200: # Supabase client sometimes returns string vs int
-             pass # Check python client behavior, usually raises error or returns response
+        # Checking for errors in Python client is mostly via Exceptions,
+        # so if we reached here, upload is likely successful.
+        # res variable might contain metadata but no status_code attribute in some versions.
     except Exception as e:
         return jsonify({'error': f'Storage upload failed: {str(e)}'}), 500
 
