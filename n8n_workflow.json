@@ -19,17 +19,17 @@
         {
             "parameters": {
                 "method": "POST",
-                "url": "={{ $env.SUPABASE_URL }}/rest/v1/entries",
+                "url": "https://nudonsssvdbbgzuoctcv.supabase.co/rest/v1/entries",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
                         {
                             "name": "apikey",
-                            "value": "={{ $env.SUPABASE_KEY }}"
+                            "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51ZG9uc3NzdmRiYmd6dW9jdGN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5NTMzOTEsImV4cCI6MjA4NjUyOTM5MX0.KUqHHcV_4B39I9aKIjGxtPspwdRcK-5F7J0iiMmpRII"
                         },
                         {
                             "name": "Authorization",
-                            "value": "=Bearer {{ $env.SUPABASE_KEY }}"
+                            "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51ZG9uc3NzdmRiYmd6dW9jdGN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5NTMzOTEsImV4cCI6MjA4NjUyOTM5MX0.KUqHHcV_4B39I9aKIjGxtPspwdRcK-5F7J0iiMmpRII"
                         },
                         {
                             "name": "Content-Type",
@@ -43,7 +43,7 @@
                 },
                 "sendBody": true,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"name\": \"{{ $json.name }}\",\n  \"date\": \"{{ $json.date }}\",\n  \"timestamp\": \"{{ $json.timestamp }}\",\n  \"location_lat\": {{ $json.latitude || 0 }},\n  \"location_lng\": {{ $json.longitude || 0 }},\n  \"area_name\": \"{{ $json.area_name }}\",\n  \"extracted_text\": \"{{ $json.extracted_text }}\",\n  \"photo_filename\": \"{{ JSON.stringify($json.photo_filenames) }}\"\n}",
+                "jsonBody": "={\n  \"name\": \"{{ $json.name }}\",\n  \"date\": \"{{ $json.date }}\",\n  \"timestamp\": \"{{ $json.timestamp }}\",\n  \"location_lat\": {{ $json.latitude || 0 }},\n  \"location_lng\": {{ $json.longitude || 0 }},\n  \"area_name\": \"{{ $json.area_name }}\",\n  \"extracted_text\": {{ JSON.stringify($json.extracted_text || '') }},\n  \"photo_filename\": {{ JSON.stringify(JSON.stringify($json.photo_filenames || [])) }}\n}",
                 "options": {}
             },
             "type": "n8n-nodes-base.httpRequest",
