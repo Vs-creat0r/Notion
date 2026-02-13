@@ -99,10 +99,6 @@ def api_create_entry():
         return jsonify({'error': 'No data provided'}), 400
 
     name = data.get('name', '').strip()
-    if not name:
-        return jsonify({'error': 'Name is required'}), 400
-    data = request.json
-    name = data.get('name')
     photos = data.get('photos') # Expecting list of base64 strings
     # Backward compatibility
     if not photos and data.get('photo'):
@@ -125,7 +121,7 @@ def api_create_entry():
             img_bytes = base64.b64decode(encoded)
             
             # 2. Open with Pillow to compress/resize
-            img = Image.open(io.BytesIO(img_bytes))
+            img = PILImage.open(io.BytesIO(img_bytes))
             
             # Convert RGBA to RGB if needed
             if img.mode in ('RGBA', 'P'):
@@ -136,7 +132,7 @@ def api_create_entry():
             if img.width > max_width:
                 ratio = max_width / img.width
                 new_height = int(img.height * ratio)
-                img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+                img = img.resize((max_width, new_height), PILImage.Resampling.LANCZOS)
             
             # Compress to JPEG
             out_io = io.BytesIO()
