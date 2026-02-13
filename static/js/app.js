@@ -7,11 +7,15 @@ let currentLocation = { lat: null, lng: null, area: '' };
 let currentPhoto = null; // base64
 let extractedText = '';
 let isCapture = false; // true if photo was captured (not uploaded)
+let locationPermissionGranted = false;
 
 // ── Init ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     loadNames();
     loadEntries();
+
+    // Request location permission upfront (so mobile browsers remember it)
+    requestLocationPermission();
 
     // Camera input handler
     document.getElementById('camera-input').addEventListener('change', handleImageSelected);
@@ -22,6 +26,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') addName();
     });
 });
+
+// ── Request Location Permission Early ────────────────────
+function requestLocationPermission() {
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            locationPermissionGranted = true;
+            currentLocation.lat = position.coords.latitude;
+            currentLocation.lng = position.coords.longitude;
+            reverseGeocode(position.coords.latitude, position.coords.longitude);
+        },
+        (error) => {
+            console.log('Initial location request denied or failed:', error.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+}
 
 // ── Toast Notifications ─────────────────────────────────
 function showToast(message, type = 'info') {
@@ -72,15 +94,11 @@ function handleImageSelected(event) {
         currentPhoto = e.target.result;
         showPreview(e.target.result);
 
-        // If captured photo → fetch location
-        if (isCapture) {
-            fetchLocation();
-        } else {
-            // If uploaded → run OCR
-            document.getElementById('location-info').innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                <span>Location: N/A (uploaded photo)</span>
-            `;
+        // Always fetch location for both capture and upload
+        fetchLocation();
+
+        // Also run OCR
+        if (!isCapture) {
             runOCR(e.target.result);
         }
     };
@@ -137,7 +155,7 @@ function fetchLocation() {
         {
             enableHighAccuracy: true,
             timeout: 15000,
-            maximumAge: 0
+            maximumAge: 300000  // Cache GPS for 5 minutes to avoid re-prompting
         }
     );
 }
