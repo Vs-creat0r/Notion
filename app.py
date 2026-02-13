@@ -158,44 +158,42 @@ def api_create_entry():
     except Exception as e:
         return jsonify({'error': f'Image processing/upload failed: {str(e)}'}), 500
 
-    location_lat = data.get('latitude', 0)
-    location_lng = data.get('longitude', 0)
-    area_name = data.get('area_name', '')
-    extracted_text = data.get('extracted_text', '')
-    timestamp = data.get('timestamp', datetime.now().strftime('%H:%M:%S'))
-    date_str = data.get('date', datetime.now().strftime('%Y-%m-%d'))
-    
-    # Store list of filenames as JSON string
-    filenames_json = json.dumps(uploaded_filenames)
+    # Build payload for n8n — n8n handles DB insert, Drive upload, Sheet append
+    payload = {
+        'name': name,
+        'date': data.get('date', datetime.now().strftime('%Y-%m-%d')),
+        'timestamp': data.get('timestamp', datetime.now().strftime('%H:%M:%S')),
+        'latitude': data.get('latitude', 0),
+        'longitude': data.get('longitude', 0),
+        'area_name': data.get('area_name', ''),
+        'extracted_text': data.get('extracted_text', ''),
+        'photo_urls': photo_urls,
+        'photo_filenames': uploaded_filenames
+    }
 
-    entry = database.create_entry(
-        name=name,
-        location_lat=location_lat,
-        location_lng=location_lng,
-        area_name=area_name,
-        photo_filename=filenames_json,
-        extracted_text=extracted_text,
-        timestamp=timestamp,
-        date=date_str
-    )
-    
-    if entry:
-         entry['photo_urls'] = photo_urls
-         # Backward compatibility for frontend
-         entry['main_photo_url'] = photo_urls[0] if photo_urls else None
+    # Send to n8n webhook (synchronous — wait for n8n to finish)
+    webhook_url = os.environ.get('N8N_WEBHOOK_URL')
+    if not webhook_url:
+        return jsonify({'error': 'N8N_WEBHOOK_URL not configured'}), 500
 
-         # Trigger n8n Webhook (Fire and forget)
-         webhook_url = os.environ.get('N8N_WEBHOOK_URL')
-         if webhook_url:
-             try:
-                 # Add the photo URLs to the payload
-                 payload = entry.copy()
-                 payload['photo_urls'] = photo_urls
-                 requests.post(webhook_url, json=payload, timeout=5)
-             except Exception as e:
-                 print(f"Failed to trigger n8n webhook: {e}")
+    try:
+        n8n_response = requests.post(webhook_url, json=payload, timeout=30)
+        
+        if n8n_response.status_code >= 400:
+            print(f"n8n webhook returned error: {n8n_response.status_code} {n8n_response.text}")
+            return jsonify({'error': 'Workflow processing failed'}), 500
+        
+        # Return success with the payload data
+        result = payload.copy()
+        result['main_photo_url'] = photo_urls[0] if photo_urls else None
+        return jsonify(result), 201
 
-    return jsonify(entry), 201
+    except requests.exceptions.Timeout:
+        # n8n took too long, but photos are already in Supabase Storage
+        return jsonify({'warning': 'Entry submitted but workflow timed out', **payload}), 202
+    except Exception as e:
+        print(f"Failed to call n8n webhook: {e}")
+        return jsonify({'error': f'Webhook call failed: {str(e)}'}), 500
 
 
 @app.route('/api/entries/<int:entry_id>', methods=['DELETE'])

@@ -9,7 +9,7 @@
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 2.1,
             "position": [
-                -400,
+                -500,
                 400
             ],
             "id": "webhook-1",
@@ -18,12 +18,51 @@
         },
         {
             "parameters": {
-                "jsCode": "// Extract photo_urls array from the webhook body\n// and create one item per URL so we can loop over them\nconst input = $input.first().json;\nconst photoUrls = input.photo_urls || [];\n\n// Store the original entry data for later use\nconst entryData = {\n  date: input.date || '',\n  name: input.name || '',\n  area_name: input.area_name || '',\n  extracted_text: input.extracted_text || '',\n  timestamp: input.timestamp || ''\n};\n\n// Return one item per photo URL\nreturn photoUrls.map((url, i) => ({\n  json: {\n    photo_url: url,\n    photo_index: i,\n    ...entryData\n  }\n}));"
+                "method": "POST",
+                "url": "={{ $env.SUPABASE_URL }}/rest/v1/entries",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "apikey",
+                            "value": "={{ $env.SUPABASE_KEY }}"
+                        },
+                        {
+                            "name": "Authorization",
+                            "value": "=Bearer {{ $env.SUPABASE_KEY }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        },
+                        {
+                            "name": "Prefer",
+                            "value": "return=representation"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"name\": \"{{ $json.name }}\",\n  \"date\": \"{{ $json.date }}\",\n  \"timestamp\": \"{{ $json.timestamp }}\",\n  \"location_lat\": {{ $json.latitude || 0 }},\n  \"location_lng\": {{ $json.longitude || 0 }},\n  \"area_name\": \"{{ $json.area_name }}\",\n  \"extracted_text\": \"{{ $json.extracted_text }}\",\n  \"photo_filename\": \"{{ JSON.stringify($json.photo_filenames) }}\"\n}",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                -260,
+                400
+            ],
+            "id": "supabase-insert",
+            "name": "Insert to Supabase DB"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Get the original webhook data (not the Supabase response)\nconst webhookData = $('Webhook').first().json;\nconst photoUrls = webhookData.photo_urls || [];\n\n// Store the original entry data for later use\nconst entryData = {\n  date: webhookData.date || '',\n  name: webhookData.name || '',\n  area_name: webhookData.area_name || '',\n  extracted_text: webhookData.extracted_text || '',\n  timestamp: webhookData.timestamp || ''\n};\n\n// If no photos, return just the entry data\nif (photoUrls.length === 0) {\n  return [{ json: { ...entryData, photo_url: '' } }];\n}\n\n// Return one item per photo URL\nreturn photoUrls.map((url, i) => ({\n  json: {\n    photo_url: url,\n    photo_index: i,\n    ...entryData\n  }\n}));"
             },
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                -160,
+                -20,
                 400
             ],
             "id": "split-urls",
@@ -43,7 +82,7 @@
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [
-                80,
+                220,
                 400
             ],
             "id": "download-img",
@@ -51,7 +90,7 @@
         },
         {
             "parameters": {
-                "name": "={{ $('Split Photo URLs').item.json.name }}_{{ $('Split Photo URLs').item.json.photo_index }}.jpg",
+                "name": "={{ $('Split Photo URLs').item.json.name }}_{{ $('Split Photo URLs').item.json.date }}_{{ $('Split Photo URLs').item.json.photo_index }}.jpg",
                 "driveId": {
                     "__rl": true,
                     "value": "My Drive",
@@ -67,7 +106,7 @@
             "type": "n8n-nodes-base.googleDrive",
             "typeVersion": 3,
             "position": [
-                320,
+                460,
                 400
             ],
             "id": "upload-drive",
@@ -87,7 +126,7 @@
             "type": "n8n-nodes-base.aggregate",
             "typeVersion": 1,
             "position": [
-                560,
+                700,
                 400
             ],
             "id": "aggregate-links",
@@ -95,12 +134,12 @@
         },
         {
             "parameters": {
-                "jsCode": "// Combine all Drive webViewLinks into a single comma-separated string\nconst items = $input.first().json.data || $input.all().map(i => i.json);\nconst allItems = Array.isArray(items) ? items : [items];\n\n// Get the webViewLinks from uploaded files\nconst links = allItems.map(item => item.webViewLink || item.webContentLink || '').filter(Boolean);\nconst photoUrlStr = links.join(', ');\n\n// Get entry data from the first split item\nconst firstItem = allItems[0] || {};\n\nreturn [{\n  json: {\n    date: firstItem.date || $('Split Photo URLs').first().json.date || '',\n    name: firstItem.name || $('Split Photo URLs').first().json.name || '',\n    area_name: firstItem.area_name || $('Split Photo URLs').first().json.area_name || '',\n    extracted_text: firstItem.extracted_text || $('Split Photo URLs').first().json.extracted_text || '',\n    timestamp: firstItem.timestamp || $('Split Photo URLs').first().json.timestamp || '',\n    photo_url: photoUrlStr\n  }\n}];"
+                "jsCode": "// Combine all Drive webViewLinks into a comma-separated string\nconst allData = $input.first().json.data || $input.all().map(i => i.json);\nconst items = Array.isArray(allData) ? allData : [allData];\n\nconst links = items.map(item => item.webViewLink || item.webContentLink || '').filter(Boolean);\nconst photoUrlStr = links.join(', ');\n\n// Get entry data from the webhook\nconst webhookData = $('Webhook').first().json;\n\nreturn [{\n  json: {\n    date: webhookData.date || '',\n    name: webhookData.name || '',\n    area_name: webhookData.area_name || '',\n    extracted_text: webhookData.extracted_text || '',\n    timestamp: webhookData.timestamp || '',\n    photo_url: photoUrlStr\n  }\n}];"
             },
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
             "position": [
-                800,
+                940,
                 400
             ],
             "id": "build-row",
@@ -198,7 +237,7 @@
             "type": "n8n-nodes-base.googleSheets",
             "typeVersion": 4.7,
             "position": [
-                1040,
+                1180,
                 400
             ],
             "id": "append-sheet",
@@ -217,7 +256,7 @@
             "type": "n8n-nodes-base.respondToWebhook",
             "typeVersion": 1.5,
             "position": [
-                1280,
+                1420,
                 400
             ],
             "id": "respond-webhook",
@@ -226,6 +265,17 @@
     ],
     "connections": {
         "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Insert to Supabase DB",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Insert to Supabase DB": {
             "main": [
                 [
                     {
