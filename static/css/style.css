@@ -63,9 +63,11 @@ body {
 ::-webkit-scrollbar {
     width: 4px;
 }
+
 ::-webkit-scrollbar-track {
     background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
     background: var(--text-muted);
     border-radius: 4px;
@@ -104,11 +106,13 @@ body {
     border: 1px solid rgba(0, 214, 143, 0.3);
     color: #00d68f;
 }
+
 .toast.error {
     background: rgba(255, 71, 87, 0.2);
     border: 1px solid rgba(255, 71, 87, 0.3);
     color: #ff4757;
 }
+
 .toast.info {
     background: rgba(69, 170, 242, 0.2);
     border: 1px solid rgba(69, 170, 242, 0.3);
@@ -116,12 +120,26 @@ body {
 }
 
 @keyframes toastIn {
-    from { opacity: 0; transform: translateY(-16px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(-16px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
+
 @keyframes toastOut {
-    from { opacity: 1; }
-    to { opacity: 0; transform: translateY(-16px); }
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-16px);
+    }
 }
 
 /* ── Loading Overlay ─────────────────────────────────── */
@@ -137,6 +155,7 @@ body {
     align-items: center;
     justify-content: center;
 }
+
 #loading-overlay.hidden {
     display: none;
 }
@@ -156,7 +175,9 @@ body {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 #loading-text {
@@ -443,13 +464,15 @@ select:focus {
     gap: 10px;
 }
 
-.btn-capture, .btn-upload {
+.btn-capture,
+.btn-upload {
     flex-direction: column;
     padding: 24px 16px;
     border-radius: var(--radius-lg);
 }
 
-.btn-capture span, .btn-upload span {
+.btn-capture span,
+.btn-upload span {
     font-size: 0.8rem;
     margin-top: 4px;
 }
@@ -466,8 +489,15 @@ select:focus {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .preview-image-wrapper {
@@ -540,6 +570,56 @@ select:focus {
     border-color: rgba(69, 170, 242, 0.3);
     color: var(--info);
     background: rgba(69, 170, 242, 0.12);
+}
+
+/* ── Photo Grid ──────────────────────────────────────── */
+
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.grid-item {
+    position: relative;
+    padding-top: 100%;
+    /* 1:1 Aspect Ratio */
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+}
+
+.grid-item img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.btn-remove-grid-item {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: var(--transition);
+}
+
+.btn-remove-grid-item:hover {
+    background: var(--danger);
 }
 
 /* ── Entries ─────────────────────────────────────────── */
@@ -723,8 +803,13 @@ select:focus {
 }
 
 @keyframes slideUp {
-    from { transform: translateY(100%); }
-    to { transform: translateY(0); }
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
 }
 
 .modal-header {
@@ -949,8 +1034,15 @@ select:focus {
 /* ── Pulse animation for location fetching ───────────── */
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
 }
 
 .pulsing {

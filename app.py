@@ -4,6 +4,7 @@ import base64
 import io
 import mimetypes
 import requests
+import json
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_file
 from openpyxl import Workbook
@@ -100,54 +101,66 @@ def api_create_entry():
     name = data.get('name', '').strip()
     if not name:
         return jsonify({'error': 'Name is required'}), 400
+    data = request.json
+    name = data.get('name')
+    photos = data.get('photos') # Expecting list of base64 strings
+    # Backward compatibility
+    if not photos and data.get('photo'):
+        photos = [data.get('photo')]
 
-    photo_data = data.get('photo', '')
-    if not photo_data:
-        return jsonify({'error': 'Photo is required'}), 400
+    if not name or not photos:
+        return jsonify({'error': 'Name and at least one photo are required'}), 400
 
-    # Decode base64 image
+    uploaded_filenames = []
+    photo_urls = []
+
     try:
-        if ',' in photo_data:
-            header, encoded = photo_data.split(',', 1)
-        else:
-            encoded = photo_data
-        
-        img_bytes = base64.b64decode(encoded)
-    except Exception:
-        return jsonify({'error': 'Invalid image data'}), 400
+        for i, photo_base64 in enumerate(photos):
+            # 1. Decode generic base64
+            if ',' in photo_base64:
+                header, encoded = photo_base64.split(',', 1)
+            else:
+                encoded = photo_base64
 
-    # Optimize Image
-    filename = f"{uuid.uuid4().hex}.jpg"
-    try:
-        img = PILImage.open(io.BytesIO(img_bytes))
-        # Resize/Compress
-        max_size = 1920
-        if max(img.size) > max_size:
-            ratio = max_size / max(img.size)
-            new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
-            img = img.resize(new_size, PILImage.LANCZOS)
-        
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
+            img_bytes = base64.b64decode(encoded)
             
-        out_io = io.BytesIO()
-        img.save(out_io, format='JPEG', quality=85)
-        out_bytes = out_io.getvalue()
-    except Exception as e:
-         return jsonify({'error': f'Image processing failed: {str(e)}'}), 400
+            # 2. Open with Pillow to compress/resize
+            img = Image.open(io.BytesIO(img_bytes))
+            
+            # Convert RGBA to RGB if needed
+            if img.mode in ('RGBA', 'P'):
+                img = img.convert('RGB')
 
-    # Upload to Supabase Storage
-    try:
-        res = supabase.storage.from_("photos").upload(
-            filename,
-            out_bytes,
-            {"content-type": "image/jpeg"}
-        )
-        # Checking for errors in Python client is mostly via Exceptions,
-        # so if we reached here, upload is likely successful.
-        # res variable might contain metadata but no status_code attribute in some versions.
+            # Resize if too large (max 1600px width)
+            max_width = 1600
+            if img.width > max_width:
+                ratio = max_width / img.width
+                new_height = int(img.height * ratio)
+                img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Compress to JPEG
+            out_io = io.BytesIO()
+            img.save(out_io, format='JPEG', quality=70, optimize=True)
+            out_bytes = out_io.getvalue()
+
+            # Generate filename
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Use a clean name and unique ID
+            filename = f"{name.replace(' ', '_')}_{timestamp_str}_{i}.jpg"
+
+            # Upload to Supabase Storage
+            res = supabase.storage.from_("photos").upload(
+                filename,
+                out_bytes,
+                {"content-type": "image/jpeg"}
+            )
+            # Check for errors omitted as per previous fix
+
+            uploaded_filenames.append(filename)
+            photo_urls.append(f"{url}/storage/v1/object/public/photos/{filename}")
+
     except Exception as e:
-        return jsonify({'error': f'Storage upload failed: {str(e)}'}), 500
+        return jsonify({'error': f'Image processing/upload failed: {str(e)}'}), 500
 
     location_lat = data.get('latitude', 0)
     location_lng = data.get('longitude', 0)
@@ -155,27 +168,33 @@ def api_create_entry():
     extracted_text = data.get('extracted_text', '')
     timestamp = data.get('timestamp', datetime.now().strftime('%H:%M:%S'))
     date_str = data.get('date', datetime.now().strftime('%Y-%m-%d'))
+    
+    # Store list of filenames as JSON string
+    filenames_json = json.dumps(uploaded_filenames)
 
     entry = database.create_entry(
         name=name,
         location_lat=location_lat,
         location_lng=location_lng,
         area_name=area_name,
-        photo_filename=filename,
+        photo_filename=filenames_json,
         extracted_text=extracted_text,
         timestamp=timestamp,
         date=date_str
     )
     
     if entry:
-         entry['photo_url'] = f"{url}/storage/v1/object/public/photos/{filename}"
-         
+         entry['photo_urls'] = photo_urls
+         # Backward compatibility for frontend
+         entry['main_photo_url'] = photo_urls[0] if photo_urls else None
+
          # Trigger n8n Webhook (Fire and forget)
          webhook_url = os.environ.get('N8N_WEBHOOK_URL')
          if webhook_url:
              try:
-                 # Add the photo URL to the payload
+                 # Add the photo URLs to the payload
                  payload = entry.copy()
+                 payload['photo_urls'] = photo_urls
                  requests.post(webhook_url, json=payload, timeout=5)
              except Exception as e:
                  print(f"Failed to trigger n8n webhook: {e}")
@@ -273,20 +292,32 @@ def api_export():
             
             ws.cell(row=current_row, column=4).border = thin_border
 
-            # Download and embed photo
-            if entry.get('photo_filename'):
+        # Download and embed photo
+        if entry.get('photo_filename'):
+            try:
+                # Handle both old (string) and new (JSON list) formats
+                filenames_str = entry['photo_filename']
+                filename_to_use = None
+                
                 try:
+                    filenames = json.loads(filenames_str)
+                    if isinstance(filenames, list) and len(filenames) > 0:
+                        filename_to_use = filenames[0] # Use first photo for Excel
+                except json.JSONDecodeError:
+                    filename_to_use = filenames_str # Old format
+
+                if filename_to_use:
                     # Download bytes from Supabase Storage
-                    res = supabase.storage.from_("photos").download(entry['photo_filename'])
+                    res = supabase.storage.from_("photos").download(filename_to_use)
                     img_bytes = res # return value is bytes
                     
                     img = XlImage(io.BytesIO(img_bytes))
                     img.width = 100
                     img.height = 75
                     ws.add_image(img, f"D{current_row}")
-                except Exception as e:
-                    print(f"Error embedding image {entry['photo_filename']}: {e}")
-                    ws.cell(row=current_row, column=4, value="[Image Load Failed]")
+            except Exception as e:
+                print(f"Error embedding image {entry['photo_filename']}: {e}")
+                ws.cell(row=current_row, column=4, value="[Image Load Failed]")
 
             current_row += 1
         

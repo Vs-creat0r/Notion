@@ -4,8 +4,8 @@
 
 // ── State ───────────────────────────────────────────────
 let currentLocation = { lat: null, lng: null, area: '' };
-let currentPhoto = null; // base64
-let extractedText = '';
+let currentPhotos = []; // Array of base64 strings
+let extractedTexts = []; // Array of extracted texts
 let isCapture = false; // true if photo was captured (not uploaded)
 let locationPermissionGranted = false;
 
@@ -86,39 +86,61 @@ function uploadPhoto() {
 }
 
 function handleImageSelected(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        currentPhoto = e.target.result;
-        showPreview(e.target.result);
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const base64 = e.target.result;
+            currentPhotos.push(base64);
+            renderPhotoGrid();
 
-        // Always fetch location for both capture and upload
-        fetchLocation();
+            // Always fetch location if not already fetched
+            if (!currentLocation.lat) fetchLocation();
 
-        // Also run OCR
-        if (!isCapture) {
-            runOCR(e.target.result);
-        }
-    };
-    reader.readAsDataURL(file);
+            // Run OCR on this photo
+            runOCR(base64);
+        };
+        reader.readAsDataURL(file);
+    });
 
-    // Reset input so same file can be selected again
+    // Reset input
     event.target.value = '';
+    document.getElementById('preview-section').classList.remove('hidden');
 }
 
-function showPreview(imageSrc) {
-    document.getElementById('preview-image').src = imageSrc;
-    document.getElementById('preview-section').classList.remove('hidden');
+function renderPhotoGrid() {
+    const grid = document.getElementById('photo-grid');
+    grid.innerHTML = '';
+
+    currentPhotos.forEach((photo, index) => {
+        const item = document.createElement('div');
+        item.className = 'grid-item';
+        item.innerHTML = `
+            <img src="${photo}" alt="Photo ${index + 1}">
+            <button class="btn-remove-grid-item" onclick="removePhoto(${index})">✕</button>
+        `;
+        grid.appendChild(item);
+    });
+
+    if (currentPhotos.length === 0) {
+        clearPreview();
+    }
+}
+
+function removePhoto(index) {
+    currentPhotos.splice(index, 1);
+    extractedTexts.splice(index, 1); // Remove associated OCR text (simplified logic)
+    renderPhotoGrid();
 }
 
 function clearPreview() {
     document.getElementById('preview-section').classList.add('hidden');
-    document.getElementById('preview-image').src = '';
+    document.getElementById('photo-grid').innerHTML = '';
     document.getElementById('ocr-info').classList.add('hidden');
-    currentPhoto = null;
-    extractedText = '';
+    currentPhotos = [];
+    extractedTexts = [];
     currentLocation = { lat: null, lng: null, area: '' };
 }
 
@@ -193,10 +215,8 @@ async function reverseGeocode(lat, lng) {
         `;
     }
 
-    // Also run OCR after getting location
-    if (currentPhoto) {
-        runOCR(currentPhoto);
-    }
+    // Also run OCR on existing photos if location was just found (optional, purely trigger)
+    // Actually no need, OCR runs on image load.
 }
 
 // ── OCR (Tesseract.js) ──────────────────────────────────
@@ -218,11 +238,13 @@ async function runOCR(imageData) {
             }
         });
 
-        extractedText = result.data.text.trim();
+        const text = result.data.text.trim();
+        if (text) extractedTexts.push(text);
+        const combinedText = extractedTexts.join('\n');
 
-        if (extractedText) {
+        if (combinedText) {
             ocrInfo.classList.add('ocr-found');
-            const preview = extractedText.length > 60 ? extractedText.substring(0, 60) + '...' : extractedText;
+            const preview = combinedText.length > 60 ? combinedText.substring(0, 60) + '...' : combinedText;
             ocrInfo.innerHTML = `
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 <span>Text found: "${preview}"</span>
@@ -252,8 +274,8 @@ async function submitEntry() {
         return;
     }
 
-    if (!currentPhoto) {
-        showToast('Please capture or upload a photo first', 'error');
+    if (currentPhotos.length === 0) {
+        showToast('Please capture or upload at least one photo', 'error');
         return;
     }
 
@@ -269,11 +291,11 @@ async function submitEntry() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 name: name,
-                photo: currentPhoto,
+                photos: currentPhotos, // Send array of base64
                 latitude: currentLocation.lat || 0,
                 longitude: currentLocation.lng || 0,
                 area_name: currentLocation.area || '',
-                extracted_text: extractedText || '',
+                extracted_text: extractedTexts.join('\n') || '',
                 timestamp: timestamp,
                 date: date
             })
@@ -333,7 +355,7 @@ async function loadEntries() {
                 html += `
                     <div class="entry-item">
                         <div class="entry-thumb" onclick="viewPhoto('${entry.photo_filename}', ${JSON.stringify(entry.extracted_text || '').replace(/'/g, "\\'")})">
-                            <img src="/uploads/${entry.photo_filename}" alt="Photo" loading="lazy">
+                            <img src="${entry.main_photo_url || '/static/placeholder.png'}" alt="Photo" loading="lazy">
                         </div>
                         <div class="entry-details">
                             <div class="entry-name">${escapeHtml(entry.name)}</div>
