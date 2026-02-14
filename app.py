@@ -180,8 +180,20 @@ def api_create_entry():
         n8n_response = requests.post(webhook_url, json=payload, timeout=30)
         
         if n8n_response.status_code >= 400:
-            print(f"n8n webhook returned error: {n8n_response.status_code} {n8n_response.text}")
-            return jsonify({'error': 'Workflow processing failed'}), 500
+            # Log full details server-side
+            print(f"n8n webhook error [{n8n_response.status_code}]: {n8n_response.text}")
+            
+            # Try to extract a meaningful error message from n8n's response
+            try:
+                n8n_err = n8n_response.json()
+                err_msg = n8n_err.get('message', n8n_err.get('error', n8n_response.text[:200]))
+            except Exception:
+                err_msg = n8n_response.text[:200] if n8n_response.text else f'HTTP {n8n_response.status_code}'
+            
+            return jsonify({
+                'error': f'Workflow failed: {err_msg}',
+                'status_code': n8n_response.status_code
+            }), 500
         
         # Return success with the payload data
         result = payload.copy()
@@ -191,6 +203,9 @@ def api_create_entry():
     except requests.exceptions.Timeout:
         # n8n took too long, but photos are already in Supabase Storage
         return jsonify({'warning': 'Entry submitted but workflow timed out', **payload}), 202
+    except requests.exceptions.ConnectionError:
+        print(f"Cannot reach n8n server at {webhook_url}")
+        return jsonify({'error': 'Cannot reach n8n server — is it running?'}), 503
     except Exception as e:
         print(f"Failed to call n8n webhook: {e}")
         return jsonify({'error': f'Webhook call failed: {str(e)}'}), 500
