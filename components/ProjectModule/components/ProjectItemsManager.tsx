@@ -54,19 +54,7 @@ import {
   Table2,
   Edit,
   Eye,
-  Lock,
-  Unlock,
 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ProjectItemFormData } from "../types/project.types";
@@ -330,15 +318,13 @@ function ItemFormFields({
         </div>
       </div>
 
-      {/* Rate (optional) */}
+      {/* Rate */}
       <div className="space-y-1.5">
-        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-  Rate <span className="normal-case font-normal text-muted-foreground">(optional)</span>
-</Label>
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rate *</Label>
         <div className="relative">
           <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input type="number" min="0" step="0.01" className="pl-8 h-9 text-sm" placeholder="0.00"
-            value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value as number | "" })} />
+            value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value as number | "" })} required />
         </div>
       </div>
 
@@ -410,7 +396,6 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
   const updateItem = useMutation(api.projectItems.updateItem);
   const createCategory = useMutation(api.inventory.createInventoryCategory);
   const sendToProcurement = useMutation(api.projectItems.sendItemsToProcurement);
-  const unfreezeItemMutation = useMutation(api.projectItems.unfreezeItem);
   const addPhotoToItem = useMutation(api.projectItems.addPhotoToProjectItem);
 
   // ── Add form state ──────────────────────────────────────────────────────────
@@ -457,8 +442,6 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
   const [selected, setSelected] = useState<Set<Id<"projectItems">>>(new Set());
   const [isSending, setIsSending] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [unfreezeTarget, setUnfreezeTarget] = useState<Id<"projectItems"> | null>(null);
-  const [isUnfreezing, setIsUnfreezing] = useState(false);
 
   // ── View mode & pagination ──────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>("table");
@@ -486,16 +469,12 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
   useEffect(() => { setPage(1); }, [pageSize, totalItems]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
-  const toggle = (id: Id<"projectItems">) => {
-    const item = items?.find((i) => i._id === id);
-    if (item?.sentToProcurement) return; // Frozen items cannot be selected
+  const toggle = (id: Id<"projectItems">) =>
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  };
 
   const selectAll = () => {
     if (!items) return;
-    const selectableItems = items.filter((i) => !i.sentToProcurement);
-    setSelected(selected.size === selectableItems.length ? new Set() : new Set(selectableItems.map((i) => i._id)));
+    setSelected(selected.size === items.length ? new Set() : new Set(items.map((i) => i._id)));
   };
 
   const openLightbox = (photos: string[], index: number) => {
@@ -726,22 +705,6 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
   const totalEstimate = items?.reduce((s, i) => s + i.quantity * i.rate, 0) ?? 0;
   const selectedItems = items?.filter((i) => selected.has(i._id)) ?? [];
 
-  const handleUnfreeze = async () => {
-    if (!unfreezeTarget) return;
-    setIsUnfreezing(true);
-    try {
-      await unfreezeItemMutation({ itemId: unfreezeTarget });
-      toast.success("Item unfrozen — it can now be selected and resent");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to unfreeze item");
-    } finally {
-      setIsUnfreezing(false);
-      setUnfreezeTarget(null);
-    }
-  };
-
-  const selectableCount = items?.filter((i) => !i.sentToProcurement).length ?? 0;
-
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -761,9 +724,9 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
         </div>
         <div className="flex items-center gap-2">
           {/* Select All (only when items exist) */}
-          {items && items.length > 0 && selectableCount > 0 && (
+          {items && items.length > 0 && (
             <Button variant="ghost" size="sm" onClick={selectAll} className="h-7 px-2 text-xs text-muted-foreground hidden sm:flex">
-              {selected.size === selectableCount ? "Deselect All" : "Select All"}
+              {selected.size === items.length ? "Deselect All" : "Select All"}
             </Button>
           )}
           {/* View toggle (hidden on mobile) */}
@@ -813,7 +776,6 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3">
               {pagedItems.map((item) => {
                 const isSel = selected.has(item._id);
-                const isFrozen = !!item.sentToProcurement;
                 const photos = (item as any).photos as Array<{ imageUrl: string }> | undefined;
                 const total = item.quantity * item.rate;
                 return (
@@ -821,7 +783,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                     key={item._id}
                     className={cn(
                       "rounded-xl border bg-card shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-primary/30 flex flex-col overflow-hidden",
-                      isFrozen ? "opacity-60 border-amber-200 dark:border-amber-800" : isSel ? "border-primary/50 bg-primary/5" : "border-border"
+                      isSel ? "border-primary/50 bg-primary/5" : "border-border"
                     )}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('[data-no-row-click]')) return;
@@ -844,34 +806,19 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                       {/* Header row */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-bold text-foreground leading-tight truncate">{item.name}</p>
-                            {isFrozen && (
-                              <Badge variant="outline" className="text-[9px] h-4 px-1 font-semibold border-amber-300 text-amber-600 dark:text-amber-400 dark:border-amber-700 gap-0.5 shrink-0">
-                                <Lock className="h-2.5 w-2.5" />Sent
-                              </Badge>
-                            )}
-                          </div>
+                          <p className="text-sm font-bold text-foreground leading-tight truncate">{item.name}</p>
                           {item.description && (
                             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-0.5 shrink-0" data-no-row-click>
-                          {isFrozen ? (
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-500 hover:text-amber-600" onClick={() => setUnfreezeTarget(item._id)} title="Unfreeze item">
-                              <Unlock className="h-3 w-3" />
-                            </Button>
-                          ) : (
-                            <>
-                              <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} className="mr-1" />
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={() => openEditMode(item)}>
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </>
-                          )}
+                          <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} className="mr-1" />
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={() => openEditMode(item)}>
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       </div>
 
@@ -912,7 +859,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead className="w-10 pl-3">
-                      <Checkbox checked={selected.size === selectableCount && selectableCount > 0} onCheckedChange={selectAll} disabled={selectableCount === 0} />
+                      <Checkbox checked={selected.size === items.length && items.length > 0} onCheckedChange={selectAll} />
                     </TableHead>
                     <TableHead className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">Item</TableHead>
                     <TableHead className="font-semibold text-xs uppercase tracking-wider text-muted-foreground w-[100px]">Category</TableHead>
@@ -928,16 +875,11 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                 <TableBody>
                   {pagedItems.map((item, i) => {
                     const isSel = selected.has(item._id);
-                    const isFrozen = !!item.sentToProcurement;
                     const photos = (item as any).photos as Array<{ imageUrl: string }> | undefined;
                     return (
                       <TableRow
                         key={item._id}
-                        className={cn(
-                          "transition-colors cursor-pointer",
-                          isFrozen ? "opacity-60 bg-muted/20" : isSel ? "bg-primary/5" : i % 2 === 1 ? "bg-muted/10" : "",
-                          "hover:bg-accent/30"
-                        )}
+                        className={cn("transition-colors cursor-pointer", isSel ? "bg-primary/5" : i % 2 === 1 ? "bg-muted/10" : "", "hover:bg-accent/30")}
                         onClick={(e) => {
                           const target = e.target as HTMLElement;
                           if (target.closest('[data-no-row-click]')) return;
@@ -945,23 +887,10 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                         }}
                       >
                         <TableCell className="pl-3 py-2.5" data-no-row-click>
-                          {isFrozen ? (
-                            <div className="flex items-center justify-center h-4 w-4">
-                              <Lock className="h-3.5 w-3.5 text-amber-500" />
-                            </div>
-                          ) : (
-                            <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} />
-                          )}
+                          <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} />
                         </TableCell>
                         <TableCell className="py-2.5">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-semibold text-foreground leading-tight">{item.name}</p>
-                            {isFrozen && (
-                              <Badge variant="outline" className="text-[9px] h-4 px-1 font-semibold border-amber-300 text-amber-600 dark:text-amber-400 dark:border-amber-700 gap-0.5">
-                                <Lock className="h-2.5 w-2.5" />Sent
-                              </Badge>
-                            )}
-                          </div>
+                          <p className="text-sm font-semibold text-foreground leading-tight">{item.name}</p>
                           {item.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>}
                         </TableCell>
                         <TableCell className="py-2.5">
@@ -993,15 +922,9 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                           )}
                         </TableCell>
                         <TableCell className="py-2.5 pr-3" data-no-row-click>
-                          {isFrozen ? (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-500 hover:text-amber-600" onClick={() => setUnfreezeTarget(item._id)} title="Unfreeze item">
-                              <Unlock className="h-3.5 w-3.5" />
-                            </Button>
-                          ) : (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
@@ -1361,31 +1284,6 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
           </DialogContent>
         </Dialog>
       )}
-
-      {/* ── Unfreeze Confirmation Dialog ──────────────────────────────── */}
-      <AlertDialog open={!!unfreezeTarget} onOpenChange={(open) => { if (!open) setUnfreezeTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Unlock className="h-5 w-5 text-amber-500" />
-              Unfreeze Item
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This item was already sent to procurement. Unfreezing it will allow it to be selected and resent. Are you sure you want to proceed?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isUnfreezing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleUnfreeze}
-              disabled={isUnfreezing}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-            >
-              {isUnfreezing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Unfreezing…</> : <><Unlock className="h-4 w-4 mr-2" />Yes, Unfreeze</>}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

@@ -254,38 +254,12 @@ export const sendItemsToProcurement = mutation({
       throw new ConvexError("Please select at least one item");
     }
 
-    // Check for frozen items (already sent to procurement)
-    for (const itemId of args.itemIds) {
-      const item = await ctx.db.get(itemId);
-      if (item?.sentToProcurement) {
-        throw new ConvexError(
-          `Item "${item.name}" has already been sent to procurement. Unfreeze it first if you need to resend.`
-        );
-      }
-    }
-
     // Validate project exists
     const project = await ctx.db.get(args.projectId);
     if (!project) throw new ConvexError("Project not found");
 
-    // Determine siteId: use provided, or match from project location, or fall back to first active site
+    // Determine siteId: use provided or get first active site as placeholder
     let effectiveSiteId = args.siteId;
-    if (!effectiveSiteId && project.location) {
-      // Try to find a site whose name matches the project's location (case-insensitive)
-      const allSites = await ctx.db
-        .query("sites")
-        .withIndex("by_is_active", (q) => q.eq("isActive", true))
-        .collect();
-      const projectLoc = project.location.toLowerCase().trim();
-      const matchedSite = allSites.find(
-        (s) => s.name.toLowerCase().trim() === projectLoc
-      ) || allSites.find(
-        (s) => s.name.toLowerCase().trim().includes(projectLoc) || projectLoc.includes(s.name.toLowerCase().trim())
-      );
-      if (matchedSite) {
-        effectiveSiteId = matchedSite._id;
-      }
-    }
     if (!effectiveSiteId) {
       const site = await ctx.db
         .query("sites")
@@ -323,7 +297,6 @@ export const sendItemsToProcurement = mutation({
         requestNumber,
         createdBy: currentUser._id,
         siteId: effectiveSiteId!,
-        projectId: args.projectId, // Link request back to the source project
         itemName: item.name,
         description: item.description ? `${item.description}\nFrom Project: ${project.name}` : `From Project: ${project.name}`,
         specsBrand: undefined,
@@ -338,13 +311,6 @@ export const sendItemsToProcurement = mutation({
         updatedAt: now,
       });
       requestIds.push(requestId);
-
-      // Mark the project item as frozen (sent to procurement)
-      await ctx.db.patch(itemId, {
-        sentToProcurement: true,
-        sentToProcurementAt: now,
-        updatedAt: now,
-      });
     }
 
     // Audit log
@@ -359,43 +325,5 @@ export const sendItemsToProcurement = mutation({
     });
 
     return { requestIds, requestNumber };
-  },
-});
-
-/**
- * Unfreeze a project item so it can be selected and resent to procurement.
- */
-export const unfreezeItem = mutation({
-  args: { itemId: v.id("projectItems") },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new ConvexError("Not authenticated");
-
-    const currentUser = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", userId))
-      .first();
-
-    if (!currentUser) throw new ConvexError("User not found");
-
-    // Only managers and purchase officers can unfreeze
-    if (currentUser.role !== "manager" && currentUser.role !== "purchase_officer") {
-      throw new ConvexError("Unauthorized: Only managers and purchase officers can unfreeze items");
-    }
-
-    const item = await ctx.db.get(args.itemId);
-    if (!item) throw new ConvexError("Item not found");
-
-    if (!item.sentToProcurement) {
-      throw new ConvexError("Item is not frozen");
-    }
-
-    await ctx.db.patch(args.itemId, {
-      sentToProcurement: false,
-      sentToProcurementAt: undefined,
-      updatedAt: Date.now(),
-    });
-
-    return { success: true };
   },
 });

@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev",
     "dev:convex": "convex dev",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:convex\"",
-    "dev:remote": "next dev --webpack",
+    "dev:remote": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -78,10 +78,8 @@
     "@vitest/ui": "^4.1.4",
     "baseline-browser-mapping": "^2.10.0",
     "concurrently": "^9.2.1",
-    "convex-test": "^0.0.53",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "fast-check": "^4.8.0",
     "happy-dom": "^20.9.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
