@@ -10,6 +10,7 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
+  // Add empty Turbopack config to silence Turbopack/webpack conflict
   turbopack: {},
   images: {
     qualities: [75, 100],

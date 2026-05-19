@@ -35,6 +35,35 @@ export const getCurrentUser = query({
 });
 
 /**
+ * Get current user auth status for sync
+ * Safely distinguishes between "handshaking" and "user not found"
+ */
+export const getCurrentUserStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { status: "unauthenticated" };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", identity.subject))
+      .first();
+
+    if (!user) {
+      return { status: "not_found" };
+    }
+
+    if (!user.isActive) {
+      return { status: "disabled" };
+    }
+
+    return { status: "active", user };
+  },
+});
+
+/**
  * Get user by Clerk user ID
  */
 export const getUserByClerkId = query({

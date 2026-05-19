@@ -618,6 +618,8 @@ export default defineSchema({
       uploadedBy: v.id("users"),
       uploadedAt: v.number(),
     }))),
+    sentToProcurement: v.optional(v.boolean()), // True after item is sent to procurement (frozen)
+    sentToProcurementAt: v.optional(v.number()), // Timestamp when item was sent
     createdBy: v.id("users"),
     createdAt: v.number(),
     updatedAt: v.number(),

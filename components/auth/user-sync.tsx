@@ -23,11 +23,9 @@ export function UserSync() {
   const { isAuthenticated: isConvexAuthed, isLoading: isConvexLoading } = useConvexAuth();
   const router = useRouter();
 
-  // CRITICAL: Only run getCurrentUser AFTER Convex has received the auth token.
-  // If we query before the token is sent, identity will be null and we'll
-  // incorrectly log the user out.
-  const currentUser = useQuery(
-    api.users.getCurrentUser,
+  // CRITICAL: Use the new status query to distinguish between pending auth and missing user
+  const authStatus = useQuery(
+    api.users.getCurrentUserStatus,
     isConvexAuthed ? undefined : "skip"
   );
 
@@ -44,7 +42,10 @@ export function UserSync() {
     if (isConvexLoading || !isConvexAuthed) return;
 
     // Wait for Convex query to resolve
-    if (currentUser === undefined) return;
+    if (authStatus === undefined) return;
+
+    // If Convex is still handshaking, wait! Do not log out!
+    if (authStatus.status === "unauthenticated") return;
 
     if (hasCheckedRef.current) return;
 
@@ -53,7 +54,7 @@ export function UserSync() {
     const delay = Math.max(0, 3000 - timeSinceMount);
 
     const timer = setTimeout(() => {
-      if (currentUser === null) {
+      if (authStatus.status === "not_found") {
         // User not in Convex — logout
         console.warn("User not found in Convex, logging out");
         hasCheckedRef.current = true;
@@ -61,8 +62,9 @@ export function UserSync() {
         return;
       }
 
-      if (currentUser && !currentUser.isActive) {
+      if (authStatus.status === "disabled") {
         // User disabled
+        console.warn("User disabled, logging out");
         hasCheckedRef.current = true;
         logout().then(() => router.push("/login?disabled=true"));
         return;
@@ -72,7 +74,7 @@ export function UserSync() {
     }, delay);
 
     return () => clearTimeout(timer);
-  }, [isAuthenticated, authUser, currentUser, isConvexAuthed, isConvexLoading, logout, router]);
+  }, [isAuthenticated, authUser, authStatus, isConvexAuthed, isConvexLoading, logout, router]);
 
   return null;
 }
