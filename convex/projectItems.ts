@@ -68,7 +68,7 @@ export const getItemsByProjectId = query({
 
     const items = await ctx.db
       .query("projectItems")
-      .filter((q) => q.eq(q.field("projectId"), args.projectId))
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .order("desc")
       .collect();
 

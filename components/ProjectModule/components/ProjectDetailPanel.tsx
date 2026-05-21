@@ -277,7 +277,7 @@ function MetaPill({
 /* ── Project Requests Section ───────────────────────────────────────────── */
 function ProjectRequestsSection({ projectId }: { projectId: string }) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const requests = useQuery(api.requests.getRequestsByProjectId, { projectId: projectId as any });
+  const requests = useQuery(api.requests.getRequestsByProjectId, projectId ? { projectId: projectId as any } : "skip");
   const role = useUserRole();
   const router = useRouter();
 
