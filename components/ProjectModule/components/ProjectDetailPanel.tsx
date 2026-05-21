@@ -32,6 +32,10 @@ import { cn } from "@/lib/utils";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import { ProjectItemsManager } from "./ProjectItemsManager";
 import type { Project } from "../types/project.types";
+import { useUserRole } from "@/hooks/use-user-role";
+import { useRouter } from "next/navigation";
+import { ROLES } from "@/lib/auth/roles";
+import { ChevronDown, ChevronRight, Eye } from "lucide-react";
 
 interface ProjectDetailPanelProps {
   project: Project;
@@ -217,6 +221,8 @@ export function ProjectDetailPanel({ project, onBack }: ProjectDetailPanelProps)
         </div>
       </div>
 
+      <ProjectRequestsSection projectId={p._id} />
+
       {/* Dialogs */}
       <ProjectFormDialog open={isEditOpen} onOpenChange={setIsEditOpen} projectData={p} />
 
@@ -258,14 +264,108 @@ function MetaPill({
 }) {
   return (
     <div className={cn(
-      "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs",
-      highlight
-        ? "border-orange-200 dark:border-orange-800/50 bg-orange-50 dark:bg-orange-900/10"
-        : "border-border bg-muted/20"
+      "flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm max-w-full overflow-hidden",
+      highlight ? "bg-primary/5 border-primary/20" : "bg-card border-border"
     )}>
-      <span className="text-muted-foreground">{icon}</span>
-      <span className="text-muted-foreground">{label}:</span>
-      <span className="font-semibold text-foreground">{value}</span>
+      <span className="shrink-0">{icon}</span>
+      <span className="text-muted-foreground whitespace-nowrap">{label}:</span>
+      <span className="font-semibold truncate text-foreground">{value}</span>
+    </div>
+  );
+}
+
+/* ── Project Requests Section ───────────────────────────────────────────── */
+function ProjectRequestsSection({ projectId }: { projectId: string }) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const requests = useQuery(api.requests.getRequestsByProjectId, { projectId: projectId as any });
+  const role = useUserRole();
+  const router = useRouter();
+
+  // Group requests by requestNumber
+  const groupedRequests = requests?.reduce((acc, req) => {
+    if (!acc[req.requestNumber]) {
+      acc[req.requestNumber] = [];
+    }
+    acc[req.requestNumber].push(req);
+    return acc;
+  }, {} as Record<string, typeof requests>);
+
+  const requestGroups = groupedRequests ? Object.entries(groupedRequests).map(([requestNumber, items]) => ({
+    requestNumber,
+    items,
+    itemCount: items.length,
+    latestItem: items.sort((a, b) => b._creationTime - a._creationTime)[0]
+  })).sort((a, b) => b.latestItem._creationTime - a.latestItem._creationTime) : [];
+
+  const handleViewRequest = (requestId: string) => {
+    let path = "/dashboard/requests";
+    if (role === ROLES.MANAGER) path = "/dashboard/manager/requests";
+    if (role === ROLES.PURCHASE_OFFICER) path = "/dashboard/purchase/requests";
+    if (role === ROLES.SITE_ENGINEER) path = "/dashboard/site/requests";
+    
+    router.push(`${path}?requestId=${requestId}`);
+  };
+
+  if (!requests) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5 mt-6 animate-pulse">
+        <div className="h-5 w-48 bg-muted rounded mb-2"></div>
+      </div>
+    );
+  }
+
+  if (requestGroups.length === 0) {
+    return null; // Don't show the section if there are no requests associated
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden mt-6">
+      <div 
+        className="flex items-center justify-between px-5 py-3 border-b border-border bg-muted/20 cursor-pointer hover:bg-muted/30 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div>
+          <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+            Associated Requests 
+            <Badge variant="secondary" className="h-5 px-1.5">{requestGroups.length}</Badge>
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Material requests generated from this project
+          </p>
+        </div>
+        <Button variant="ghost" size="icon" className="h-8 w-8">
+          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </Button>
+      </div>
+      
+      {isExpanded && (
+        <div className="p-4 flex flex-col gap-3">
+          {requestGroups.map((group) => (
+            <div key={group.requestNumber} className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-3 rounded-lg border border-border/50 bg-background hover:bg-muted/10 transition-colors">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-sm">{group.requestNumber}</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {group.itemCount} {group.itemCount === 1 ? 'item' : 'items'} • Last updated {format(new Date(group.latestItem._creationTime), "MMM d, yyyy")}
+                  </p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-1.5"
+                onClick={() => handleViewRequest(group.latestItem._id)}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                View
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -113,8 +113,8 @@ export function DirectActionsTable({
   /* ─── Table ─── */
   return (
     <div className="rounded-2xl border overflow-hidden ring-1 ring-border/50">
-      {/* Header */}
-      <div className="grid grid-cols-[2fr_3fr_1.5fr_1.2fr_auto] bg-muted/40 border-b px-4 py-3 gap-4">
+      {/* Header - Hidden on mobile */}
+      <div className="hidden md:grid grid-cols-[2fr_3fr_1.5fr_1.2fr_auto] bg-muted/40 border-b px-4 py-3 gap-4">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">ID</span>
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Title</span>
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</span>
@@ -123,7 +123,7 @@ export function DirectActionsTable({
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-border/60">
+      <div className="divide-y divide-border/60 bg-card">
         {items.map((item) => {
           const cfg = typeConfig[item.type] ?? typeConfig.cc;
           const Icon = cfg.icon;
@@ -134,16 +134,23 @@ export function DirectActionsTable({
           return (
             <div
               key={item.id}
-              className="grid grid-cols-[2fr_3fr_1.5fr_1.2fr_auto] items-center px-4 py-3 gap-4 hover:bg-muted/30 transition-colors group"
+              className="flex flex-col md:grid md:grid-cols-[2fr_3fr_1.5fr_1.2fr_auto] md:items-center p-4 md:px-4 md:py-3 gap-3 md:gap-4 hover:bg-muted/30 transition-colors group"
             >
-              {/* ID */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ring-1", cfg.bg, cfg.ring)}>
-                  <Icon className={cn("h-3.5 w-3.5", cfg.color)} />
+              {/* Top Row on Mobile (ID & Status) / ID on Desktop */}
+              <div className="flex items-start md:items-center justify-between md:justify-start gap-2.5 min-w-0">
+                <div className="flex items-center gap-2.5">
+                  <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ring-1", cfg.bg, cfg.ring)}>
+                    <Icon className={cn("h-3.5 w-3.5", cfg.color)} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-mono font-bold text-sm leading-none">{item.displayId}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{cfg.label}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="font-mono font-bold text-sm leading-none">{item.displayId}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{cfg.label}</p>
+                <div className="md:hidden">
+                  <Badge variant="outline" className={cn("text-[11px] px-2 py-0.5 font-medium border", badge)}>
+                    {getStatusLabel(item.status)}
+                  </Badge>
                 </div>
               </div>
 
@@ -194,41 +201,44 @@ export function DirectActionsTable({
                 )}
               </div>
 
-              {/* Status */}
-              <div>
+              {/* Status (Desktop only) */}
+              <div className="hidden md:block">
                 <Badge variant="outline" className={cn("text-[11px] px-2 py-0.5 font-medium border", badge)}>
                   {getStatusLabel(item.status)}
                 </Badge>
               </div>
 
-              {/* Date */}
-              <p className="text-[12px] text-muted-foreground whitespace-nowrap">{formatDate(item.createdDate)}</p>
+              {/* Bottom Row on Mobile (Date & Action) / Individual Columns on Desktop */}
+              <div className="flex items-center justify-between md:contents pt-1 md:pt-0 border-t md:border-0 border-border/40">
+                {/* Date */}
+                <p className="text-[12px] text-muted-foreground whitespace-nowrap">{formatDate(item.createdDate)}</p>
 
-              {/* Action */}
-              <div className="flex justify-end gap-1 min-w-[70px]">
-                {actionType === "edit" ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleAction(item)}
-                    disabled={isEditing}
-                    className="h-7 text-xs gap-1 px-2.5 text-amber-600 hover:text-amber-700 hover:bg-amber-500/10"
-                  >
-                    <Edit className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Edit</span>
-                  </Button>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleAction(item)}
-                    disabled={isEditing}
-                    className="h-7 text-xs gap-1 px-2.5 text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">View</span>
-                  </Button>
-                )}
+                {/* Action */}
+                <div className="flex justify-end gap-1 min-w-[70px]">
+                  {actionType === "edit" ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleAction(item)}
+                      disabled={isEditing}
+                      className="h-7 text-xs gap-1 px-2.5 text-amber-600 hover:text-amber-700 hover:bg-amber-500/10"
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                      <span className="inline">Edit</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleAction(item)}
+                      disabled={isEditing}
+                      className="h-7 text-xs gap-1 px-2.5 text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      <span className="inline">View</span>
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           );

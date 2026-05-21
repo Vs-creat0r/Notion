@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npx skills add vercel-labs/agent-browser)",
+      "WebFetch(domain:growthxclub.notion.site)"
+    ]
+  }
+}

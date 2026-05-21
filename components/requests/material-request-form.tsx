@@ -1059,6 +1059,7 @@ export function MaterialRequestForm({
             notes: item.notes.trim() || undefined,
             photos: photos.length > 0 ? photos : undefined,
             isUrgent: item.isUrgent,
+            projectId: item.projectId || undefined,
           };
         })
       );
@@ -1146,6 +1147,7 @@ export function MaterialRequestForm({
             notes: item.notes.trim() || undefined,
             photos: photos.length > 0 ? photos : undefined,
             isUrgent: item.isUrgent,
+            projectId: item.projectId || undefined,
           };
         })
       );
@@ -2288,10 +2290,14 @@ export function MaterialRequestForm({
                 <div className="flex items-start gap-3">
                   <MapPin className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1">Site Location(s)</p>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">Project / Site Location(s)</p>
                     <p className="text-sm font-medium">
                       {(() => {
-                        const uniqueSiteIds = [...new Set(items.map(i => i.siteId).filter(Boolean))];
+                        const uniqueProjectIds = [...new Set(items.map((i: any) => i.projectId).filter(Boolean))];
+                        if (uniqueProjectIds.length > 0) {
+                          return uniqueProjectIds.map(pId => allProjects?.find(p => p._id === pId)?.name || "Unknown").join(", ");
+                        }
+                        const uniqueSiteIds = [...new Set(items.map((i: any) => i.siteId).filter(Boolean))];
                         return uniqueSiteIds.map(sId => assignedSites?.find((s) => s?._id === sId)?.name || "Unknown").join(", ") || "Not selected";
                       })()}
                     </p>

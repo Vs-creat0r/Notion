@@ -2101,17 +2101,17 @@ export function RequestDetailsDialog({
                           <span className="text-xs font-semibold">{request.project.name}</span>
                         </button>
                       )}
-                      {request.site ? (
+                      {!request.project && request.site ? (
                         <button
                           onClick={() => setSelectedSiteId(request.site!._id)}
                           className="font-semibold text-lg text-foreground hover:text-primary hover:bg-muted/50 rounded-md transition-colors cursor-pointer text-left block w-full truncate"
                         >
                           {request.site.name}
                         </button>
-                      ) : (
+                      ) : !request.project ? (
                         <p className="font-semibold text-lg">—</p>
-                      )}
-                      {request.site?.address && (
+                      ) : null}
+                      {!request.project && request.site?.address && (
                         <p className="text-xs text-muted-foreground line-clamp-2 flex items-center gap-1">
                           <MapPin className="h-3 w-3 shrink-0" />{request.site.address}
                         </p>
@@ -2162,7 +2162,7 @@ export function RequestDetailsDialog({
                             {request.project.name}
                           </button>
                         )}
-                        {request.site ? (
+                        {!request.project && request.site ? (
                           <>
                             <button
                               onClick={() => setSelectedSiteId(request.site!._id)}
@@ -2186,9 +2186,9 @@ export function RequestDetailsDialog({
                               </div>
                             )}
                           </>
-                        ) : (
+                        ) : !request.project ? (
                           <span className="text-muted-foreground">—</span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
 

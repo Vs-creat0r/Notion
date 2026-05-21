@@ -6,7 +6,7 @@
  * Client component for manager requests page with cost comparison support.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { RequestsTable } from "@/components/requests/requests-table";
@@ -72,6 +72,19 @@ export function ManagerRequestsContent() {
     const [ccRequestIds, setCCRequestIds] = useState<Id<"requests">[] | undefined>(undefined); // For batch CC viewing
     const [pdfPreviewPoNumber, setPdfPreviewPoNumber] = useState<string | null>(null);
     const [pdfRequestNumber, setPdfRequestNumber] = useState<string | null>(null);
+
+    // Read requestId from URL if present
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            const reqId = url.searchParams.get("requestId");
+            if (reqId) {
+                setSelectedRequestId(reqId as Id<"requests">);
+                url.searchParams.delete("requestId");
+                window.history.replaceState({}, "", url.toString());
+            }
+        }
+    }, []);
     const [searchQuery, setSearchQuery] = useState<string>("");
     const [workFilter, setWorkFilter] = useState<string>("work_pending");
     const [categoryFilter, setCategoryFilter] = useState<string>("all");

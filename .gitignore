@@ -52,3 +52,6 @@ next-env.d.ts
 # agent directories
 .agent
 .gemini
+
+NOTION/
+NOTION_repo/

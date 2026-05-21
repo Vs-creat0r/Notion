@@ -38,6 +38,8 @@
   ],
   "exclude": [
     "node_modules",
-    "test-issuer.ts"
+    "test-issuer.ts",
+    "NOTION",
+    "NOTION_repo"
   ]
 }

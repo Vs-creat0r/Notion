@@ -103,6 +103,32 @@ export const getUserAssignedProjects = query({
 });
 
 /**
+ * Get requests associated with a specific project
+ */
+export const getRequestsByProjectId = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", userId))
+      .first();
+
+    if (!currentUser) return [];
+
+    const requests = await ctx.db
+      .query("requests")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .order("desc")
+      .collect();
+
+    return requests;
+  },
+});
+
+/**
  * Get inventory items for autocomplete suggestions
  * Returns all active inventory items with their names and units
  */
@@ -190,6 +216,7 @@ export const getUserRequests = query({
     const requestsWithDetails = await Promise.all(
       requests.map(async (request) => {
         const site = await ctx.db.get(request.siteId);
+        const project = request.projectId ? await ctx.db.get(request.projectId) : null;
         const creator = await ctx.db.get(request.createdBy);
         const approver = request.approvedBy
           ? await ctx.db.get(request.approvedBy)
@@ -226,6 +253,13 @@ export const getUserRequests = query({
               name: site.name,
               code: site.code,
               address: site.address,
+            }
+            : null,
+          project: project
+            ? {
+              _id: project._id,
+              name: project.name,
+              location: project.location,
             }
             : null,
           creator: creator
@@ -301,6 +335,7 @@ export const getRequestsReadyForCC = query({
     const requestsWithDetails = await Promise.all(
       requests.map(async (request) => {
         const site = await ctx.db.get(request.siteId);
+        const project = request.projectId ? await ctx.db.get(request.projectId) : null;
         const creator = await ctx.db.get(request.createdBy);
         const approver = request.approvedBy
           ? await ctx.db.get(request.approvedBy)
@@ -337,6 +372,13 @@ export const getRequestsReadyForCC = query({
               name: site.name,
               code: site.code,
               address: site.address,
+            }
+            : null,
+          project: project
+            ? {
+              _id: project._id,
+              name: project.name,
+              location: project.location,
             }
             : null,
           creator: creator
@@ -1037,6 +1079,7 @@ export const createMultipleMaterialRequests = mutation({
             })
           )
         ),
+        projectId: v.optional(v.union(v.id("projects"), v.string())),
       })
     ),
     orderNote: v.optional(v.string()),
@@ -1124,6 +1167,18 @@ export const createMultipleMaterialRequests = mutation({
         }
       }
 
+      // Determine which projectId to use
+      let effectiveProjectId: Id<"projects"> | undefined = undefined;
+      if (item.projectId) {
+        const normalized = ctx.db.normalizeId("projects", item.projectId);
+        if (normalized) {
+          effectiveProjectId = normalized;
+        }
+      }
+      if (!effectiveProjectId && args.projectId) {
+        effectiveProjectId = args.projectId;
+      }
+
       const requestId = await ctx.db.insert("requests", {
         requestNumber,
         createdBy: currentUser._id,
@@ -1140,7 +1195,7 @@ export const createMultipleMaterialRequests = mutation({
         status: args.isRFQ ? "ready_for_cc" : "pending", // RFQ goes directly to ready_for_cc
         notes: item.notes,
         isRFQ: args.isRFQ || undefined, // Mark as RFQ if applicable
-        projectId: args.projectId, // Associate with project if provided
+        projectId: effectiveProjectId, // Associate with project if provided
         createdAt: now,
         updatedAt: now,
       });
@@ -1200,6 +1255,7 @@ export const saveMultipleMaterialRequestsAsDraft = mutation({
             })
           )
         ),
+        projectId: v.optional(v.union(v.id("projects"), v.string())),
       })
     ),
     orderNote: v.optional(v.string()),
@@ -1256,6 +1312,15 @@ export const saveMultipleMaterialRequestsAsDraft = mutation({
         throw new ConvexError(`Item ${i + 1}: Site not assigned to you`);
       }
 
+      // Determine which projectId to use
+      let effectiveProjectId: Id<"projects"> | undefined = undefined;
+      if (item.projectId) {
+        const normalized = ctx.db.normalizeId("projects", item.projectId);
+        if (normalized) {
+          effectiveProjectId = normalized;
+        }
+      }
+
       const requestId = await ctx.db.insert("requests", {
         requestNumber,
         createdBy: currentUser._id,
@@ -1271,6 +1336,7 @@ export const saveMultipleMaterialRequestsAsDraft = mutation({
         itemOrder: i + 1,
         status: "draft",
         notes: item.notes,
+        projectId: effectiveProjectId,
         createdAt: now,
         updatedAt: now,
       });
@@ -1741,6 +1807,7 @@ export const updateDraftRequest = mutation({
             })
           )
         ),
+        projectId: v.optional(v.union(v.id("projects"), v.string())),
       })
     ),
     orderNote: v.optional(v.string()),
@@ -1796,6 +1863,15 @@ export const updateDraftRequest = mutation({
         throw new ConvexError(`Item ${i + 1}: Site not assigned to you`);
       }
 
+      // Determine which projectId to use
+      let effectiveProjectId: Id<"projects"> | undefined = undefined;
+      if (item.projectId) {
+        const normalized = ctx.db.normalizeId("projects", item.projectId);
+        if (normalized) {
+          effectiveProjectId = normalized;
+        }
+      }
+
       const requestId = await ctx.db.insert("requests", {
         requestNumber: args.requestNumber,
         createdBy: currentUser._id,
@@ -1811,6 +1887,7 @@ export const updateDraftRequest = mutation({
         itemOrder: i + 1,
         status: "draft",
         notes: item.notes,
+        projectId: effectiveProjectId,
         createdAt: existingRequests[0].createdAt,
         updatedAt: now,
       });

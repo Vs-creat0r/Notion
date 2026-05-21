@@ -122,6 +122,7 @@ export default defineSchema({
     .index("by_created_by", ["createdBy"])
     .index("by_site_id", ["siteId"])
     .index("by_status", ["status"])
+    .index("by_project", ["projectId"])
     .index("by_created_at", ["createdAt"]),
 
   // ============================================================================
@@ -611,13 +612,15 @@ export default defineSchema({
     unit: v.optional(v.string()), // e.g. kg, nos, bags, m
     hsnSacCode: v.optional(v.string()), // HSN/SAC Code
     quantity: v.number(),
-    rate: v.number(),
+    rate: v.optional(v.number()),
     photos: v.optional(v.array(v.object({
       imageUrl: v.string(),
       imageKey: v.string(),
       uploadedBy: v.id("users"),
       uploadedAt: v.number(),
     }))),
+    sentToProcurement: v.optional(v.boolean()),
+    sentToProcurementAt: v.optional(v.number()),
     createdBy: v.id("users"),
     createdAt: v.number(),
     updatedAt: v.number(),

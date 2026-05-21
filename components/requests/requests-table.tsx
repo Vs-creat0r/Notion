@@ -912,7 +912,7 @@ export function RequestsTable({
                             <span className="text-[10px] font-black uppercase tracking-wide">{item.project.name}</span>
                           </div>
                         )}
-                        {item.site && (
+                        {!item.project && item.site && (
                           <div
                             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-400/10 border border-transparent hover:border-primary/20 hover:text-primary transition-all cursor-pointer group/site"
                             onClick={(e) => { e.stopPropagation(); setSelectedSiteId(item.siteId); }}
@@ -1506,13 +1506,15 @@ export function RequestsTable({
                                 {firstItem.project.name}
                               </span>
                             )}
-                            <div
-                              className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors group"
-                              onClick={(e) => { e.stopPropagation(); setSelectedSiteId(firstItem.siteId); }}
-                            >
-                              <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span className="truncate text-xs text-muted-foreground group-hover:underline group-hover:text-primary" title={firstItem.site?.name}>{firstItem.site?.name || "—"}</span>
-                            </div>
+                            {!firstItem.project && firstItem.site && (
+                              <div
+                                className="flex items-center gap-1 group bg-slate-400/5 hover:bg-slate-400/20 px-2 py-0.5 rounded-sm transition-colors cursor-pointer"
+                                onClick={(e) => { e.stopPropagation(); setSelectedSiteId(firstItem.siteId); }}
+                              >
+                                <MapPin className="h-3 w-3 shrink-0 text-muted-foreground group-hover:text-primary" />
+                                <span className="truncate text-xs text-muted-foreground group-hover:underline group-hover:text-primary" title={firstItem.site?.name}>{firstItem.site?.name || "—"}</span>
+                              </div>
+                            )}
                           </div>
                         </TableCell>
 
@@ -1993,15 +1995,15 @@ export function RequestsTable({
                                       <span className="text-base font-black text-foreground tracking-tight">{item.quantity}</span>
                                       <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{item.unit}</span>
                                     </div>
-                                    {item.site && (
-                                      <div
-                                        className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-primary/5 border border-primary/10 text-primary hover:bg-primary/10 transition-colors cursor-pointer whitespace-nowrap group/site"
+                                    {!item.project && item.site && (
+                                        <div 
+                                        className="flex items-center gap-1 bg-slate-500/10 hover:bg-slate-500/20 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
                                         onClick={(e) => { e.stopPropagation(); setSelectedSiteId(item.siteId); }}
                                         title={item.site.name}
-                                      >
-                                        <MapPin className="h-2.5 w-2.5 shrink-0 group-hover:scale-110 transition-transform" />
+                                        >
+                                        <MapPin className="h-2.5 w-2.5 text-muted-foreground" />
                                         <span className="text-[9px] font-bold truncate max-w-[80px]">{item.site.name}</span>
-                                      </div>
+                                        </div>
                                     )}
                                   </div>
 

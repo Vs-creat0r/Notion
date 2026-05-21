@@ -54,6 +54,8 @@ import {
   Table2,
   Edit,
   Eye,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -320,7 +322,7 @@ function ItemFormFields({
 
       {/* Rate */}
       <div className="space-y-1.5">
-        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rate *</Label>
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rate <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
         <div className="relative">
           <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input type="number" min="0" step="0.01" className="pl-8 h-9 text-sm" placeholder="0.00"
@@ -397,6 +399,11 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
   const createCategory = useMutation(api.inventory.createInventoryCategory);
   const sendToProcurement = useMutation(api.projectItems.sendItemsToProcurement);
   const addPhotoToItem = useMutation(api.projectItems.addPhotoToProjectItem);
+  const unfreezeItem = useMutation(api.projectItems.unfreezeItem);
+
+  const [unfreezeConfirmOpen, setUnfreezeConfirmOpen] = useState(false);
+  const [itemToUnfreeze, setItemToUnfreeze] = useState<any | null>(null);
+  const [isUnfreezing, setIsUnfreezing] = useState(false);
 
   // ── Add form state ──────────────────────────────────────────────────────────
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -474,7 +481,8 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
 
   const selectAll = () => {
     if (!items) return;
-    setSelected(selected.size === items.length ? new Set() : new Set(items.map((i) => i._id)));
+    const selectableItems = items.filter(i => !i.sentToProcurement);
+    setSelected(selected.size === selectableItems.length && selectableItems.length > 0 ? new Set() : new Set(selectableItems.map((i) => i._id)));
   };
 
   const openLightbox = (photos: string[], index: number) => {
@@ -561,11 +569,11 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
   // ── Mutations ────────────────────────────────────────────────────────────────
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || form.quantity === "" || form.rate === "") {
-      toast.error("Fill in all required fields"); return;
+    if (!form.name || form.quantity === "") {
+      toast.error("Fill in all required fields (Item Name, QTY)"); return;
     }
     if (Number(form.quantity) <= 0) { toast.error("Quantity must be > 0"); return; }
-    if (Number(form.rate) < 0) { toast.error("Rate cannot be negative"); return; }
+    if (form.rate !== "" && Number(form.rate) < 0) { toast.error("Rate cannot be negative"); return; }
 
     setIsSubmitting(true);
     try {
@@ -577,7 +585,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
         unit: form.unit.trim() || undefined,
         hsnSacCode: form.hsnSacCode.trim() || undefined,
         quantity: Number(form.quantity),
-        rate: Number(form.rate),
+        rate: form.rate !== "" ? Number(form.rate) : undefined,
       });
 
       if (selectedPhotos.length > 0 || inventoryImageUrls.length > 0) {
@@ -620,11 +628,11 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!detailItem) return;
-    if (!editForm.name || editForm.quantity === "" || editForm.rate === "") {
-      toast.error("Fill in all required fields"); return;
+    if (!editForm.name || editForm.quantity === "") {
+      toast.error("Fill in all required fields (Item Name, QTY)"); return;
     }
     if (Number(editForm.quantity) <= 0) { toast.error("Quantity must be > 0"); return; }
-    if (Number(editForm.rate) < 0) { toast.error("Rate cannot be negative"); return; }
+    if (editForm.rate !== "" && Number(editForm.rate) < 0) { toast.error("Rate cannot be negative"); return; }
 
     setIsSavingEdit(true);
     try {
@@ -636,7 +644,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
         unit: editForm.unit.trim() || undefined,
         hsnSacCode: editForm.hsnSacCode.trim() || undefined,
         quantity: Number(editForm.quantity),
-        rate: Number(editForm.rate),
+        rate: editForm.rate !== "" ? Number(editForm.rate) : undefined,
       });
 
       if (editSelectedPhotos.length > 0 || editInventoryImageUrls.length > 0) {
@@ -690,6 +698,21 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
     }
   };
 
+  const handleUnfreeze = async () => {
+    if (!itemToUnfreeze) return;
+    setIsUnfreezing(true);
+    try {
+      await unfreezeItem({ itemId: itemToUnfreeze._id });
+      toast.success("Item unfrozen");
+      setUnfreezeConfirmOpen(false);
+      setItemToUnfreeze(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to unfreeze item");
+    } finally {
+      setIsUnfreezing(false);
+    }
+  };
+
   const handleCreateCat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -702,7 +725,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
     } catch { toast.error("Failed to create category"); }
   };
 
-  const totalEstimate = items?.reduce((s, i) => s + i.quantity * i.rate, 0) ?? 0;
+  const totalEstimate = items?.reduce((s, i) => s + i.quantity * (i.rate || 0), 0) ?? 0;
   const selectedItems = items?.filter((i) => selected.has(i._id)) ?? [];
 
 
@@ -724,9 +747,9 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
         </div>
         <div className="flex items-center gap-2">
           {/* Select All (only when items exist) */}
-          {items && items.length > 0 && (
+          {items && items.filter(i => !i.sentToProcurement).length > 0 && (
             <Button variant="ghost" size="sm" onClick={selectAll} className="h-7 px-2 text-xs text-muted-foreground hidden sm:flex">
-              {selected.size === items.length ? "Deselect All" : "Select All"}
+              {selected.size === items.filter(i => !i.sentToProcurement).length ? "Deselect All" : "Select All"}
             </Button>
           )}
           {/* View toggle (hidden on mobile) */}
@@ -777,17 +800,18 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
               {pagedItems.map((item) => {
                 const isSel = selected.has(item._id);
                 const photos = (item as any).photos as Array<{ imageUrl: string }> | undefined;
-                const total = item.quantity * item.rate;
+                const total = item.quantity * (item.rate || 0);
                 return (
                   <div
                     key={item._id}
                     className={cn(
-                      "rounded-xl border bg-card shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-primary/30 flex flex-col overflow-hidden",
-                      isSel ? "border-primary/50 bg-primary/5" : "border-border"
+                      "rounded-xl border bg-card shadow-sm transition-all cursor-pointer flex flex-col overflow-hidden",
+                      item.sentToProcurement ? "opacity-60 bg-muted/40 pointer-events-none" : "hover:shadow-md hover:border-primary/30",
+                      isSel && !item.sentToProcurement ? "border-primary/50 bg-primary/5" : "border-border"
                     )}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('[data-no-row-click]')) return;
-                      openDetailDialog(item);
+                      if (!item.sentToProcurement) openDetailDialog(item);
                     }}
                   >
                     {/* Photo strip */}
@@ -811,14 +835,22 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-0.5 shrink-0" data-no-row-click>
-                          <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} className="mr-1" />
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={() => openEditMode(item)}>
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                        <div className="flex items-center gap-0.5 shrink-0" data-no-row-click style={item.sentToProcurement ? { pointerEvents: "auto" } : undefined}>
+                          {item.sentToProcurement ? (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-500 hover:text-emerald-600 bg-emerald-500/10 pointer-events-auto" onClick={(e) => { e.stopPropagation(); setItemToUnfreeze(item); setUnfreezeConfirmOpen(true); }} title="Sent to procurement (Click to unfreeze)">
+                              <Lock className="h-3 w-3" />
+                            </Button>
+                          ) : (
+                            <>
+                              <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} className="mr-1" />
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={() => openEditMode(item)}>
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -841,7 +873,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                           <span className="font-medium text-foreground">{item.quantity}</span>
                           {(item as any).unit && <span className="ml-0.5">{(item as any).unit}</span>}
                           <span className="mx-1">×</span>
-                          <span>₹{item.rate.toLocaleString()}</span>
+                          <span>₹{(item.rate || 0).toLocaleString()}</span>
                         </div>
                         <p className="text-sm font-bold text-primary">₹{total.toLocaleString()}</p>
                       </div>
@@ -859,7 +891,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead className="w-10 pl-3">
-                      <Checkbox checked={selected.size === items.length && items.length > 0} onCheckedChange={selectAll} />
+                      <Checkbox checked={items && items.filter(i => !i.sentToProcurement).length > 0 && selected.size === items.filter(i => !i.sentToProcurement).length} onCheckedChange={selectAll} disabled={!items || items.filter(i => !i.sentToProcurement).length === 0} />
                     </TableHead>
                     <TableHead className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">Item</TableHead>
                     <TableHead className="font-semibold text-xs uppercase tracking-wider text-muted-foreground w-[100px]">Category</TableHead>
@@ -879,15 +911,23 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                     return (
                       <TableRow
                         key={item._id}
-                        className={cn("transition-colors cursor-pointer", isSel ? "bg-primary/5" : i % 2 === 1 ? "bg-muted/10" : "", "hover:bg-accent/30")}
+                        className={cn(
+                          "transition-colors",
+                          item.sentToProcurement ? "opacity-60 bg-muted/40 hover:bg-muted/40" : "cursor-pointer hover:bg-accent/30",
+                          isSel && !item.sentToProcurement ? "bg-primary/5" : (!item.sentToProcurement && i % 2 === 1) ? "bg-muted/10" : ""
+                        )}
                         onClick={(e) => {
                           const target = e.target as HTMLElement;
                           if (target.closest('[data-no-row-click]')) return;
-                          openDetailDialog(item);
+                          if (!item.sentToProcurement) openDetailDialog(item);
                         }}
                       >
                         <TableCell className="pl-3 py-2.5" data-no-row-click>
-                          <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} />
+                          {item.sentToProcurement ? (
+                            <Lock className="h-4 w-4 text-emerald-500 ml-1 opacity-70" />
+                          ) : (
+                            <Checkbox checked={isSel} onCheckedChange={() => toggle(item._id)} />
+                          )}
                         </TableCell>
                         <TableCell className="py-2.5">
                           <p className="text-sm font-semibold text-foreground leading-tight">{item.name}</p>
@@ -903,8 +943,8 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                         </TableCell>
                         <TableCell className="py-2.5 text-sm text-right font-medium">{item.quantity}</TableCell>
                         <TableCell className="py-2.5 text-xs text-muted-foreground">{(item as any).unit || "—"}</TableCell>
-                        <TableCell className="py-2.5 text-sm text-right text-muted-foreground">₹{item.rate.toLocaleString()}</TableCell>
-                        <TableCell className="py-2.5 text-sm text-right font-bold text-foreground">₹{(item.quantity * item.rate).toLocaleString()}</TableCell>
+                        <TableCell className="py-2.5 text-sm text-right text-muted-foreground">₹{(item.rate || 0).toLocaleString()}</TableCell>
+                        <TableCell className="py-2.5 text-sm text-right font-bold text-foreground">₹{(item.quantity * (item.rate || 0)).toLocaleString()}</TableCell>
                         <TableCell className="py-2.5" data-no-row-click>
                           {photos && photos.length > 0 ? (
                             <div className="flex gap-1">
@@ -922,9 +962,15 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                           )}
                         </TableCell>
                         <TableCell className="py-2.5 pr-3" data-no-row-click>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {item.sentToProcurement ? (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-500 hover:text-emerald-600 pointer-events-auto" onClick={(e) => { e.stopPropagation(); setItemToUnfreeze(item); setUnfreezeConfirmOpen(true); }} title="Unfreeze item">
+                              <Unlock className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item._id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -1070,11 +1116,11 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3 text-center">
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Rate</p>
-                    <p className="text-lg font-bold text-foreground">₹{detailItem.rate.toLocaleString()}</p>
+                    <p className="text-lg font-bold text-foreground">₹{(detailItem.rate || 0).toLocaleString()}</p>
                   </div>
                   <div className="rounded-lg border border-border bg-primary/5 p-3 text-center">
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total</p>
-                    <p className="text-lg font-bold text-primary">₹{(detailItem.quantity * detailItem.rate).toLocaleString()}</p>
+                    <p className="text-lg font-bold text-primary">₹{(detailItem.quantity * (detailItem.rate || 0)).toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -1142,6 +1188,28 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
         </DialogContent>
       </Dialog>
 
+      {/* ── Unfreeze Confirm Dialog ────────────────────────────────────────── */}
+      <Dialog open={unfreezeConfirmOpen} onOpenChange={setUnfreezeConfirmOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Unlock className="h-5 w-5 text-emerald-500" />Unfreeze Item</DialogTitle>
+            <DialogDescription>Are you sure you want to unfreeze this item? It has already been sent to procurement.</DialogDescription>
+          </DialogHeader>
+          {itemToUnfreeze && (
+            <div className="p-3 bg-muted/30 rounded-lg border border-border">
+              <p className="font-medium text-sm text-foreground">{itemToUnfreeze.name}</p>
+              <p className="text-xs text-muted-foreground mt-1">Quantity: {itemToUnfreeze.quantity}</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnfreezeConfirmOpen(false)} disabled={isUnfreezing}>Cancel</Button>
+            <Button onClick={handleUnfreeze} disabled={isUnfreezing} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {isUnfreezing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Unfreezing…</> : "Unfreeze"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Confirm Send Dialog ──────────────────────────────────────────── */}
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
         <DialogContent className="sm:max-w-[440px]">
@@ -1156,7 +1224,7 @@ export function ProjectItemsManager({ projectId }: ProjectItemsManagerProps) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate">{item.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {item.quantity}{(item as any).unit ? ` ${(item as any).unit}` : ""} × ₹{item.rate.toLocaleString()} = ₹{(item.quantity * item.rate).toLocaleString()}
+                    {item.quantity}{(item as any).unit ? ` ${(item as any).unit}` : ""} × ₹{(item.rate || 0).toLocaleString()} = ₹{(item.quantity * (item.rate || 0)).toLocaleString()}
                   </p>
                 </div>
                 <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />

@@ -267,8 +267,20 @@ export function SiteRequestsContent() {
   // Listen for external form open requests (from dashboard)
   useEffect(() => {
     const handleOpenForm = () => setFormOpen(true);
+    const handleOpenRequestDetails = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setSelectedRequestId(customEvent.detail);
+      }
+    };
+    
     window.addEventListener('openRequestForm', handleOpenForm);
-    return () => window.removeEventListener('openRequestForm', handleOpenForm);
+    window.addEventListener('openRequestDetails', handleOpenRequestDetails);
+    
+    return () => {
+      window.removeEventListener('openRequestForm', handleOpenForm);
+      window.removeEventListener('openRequestDetails', handleOpenRequestDetails);
+    };
   }, []);
   const [editDraftNumber, setEditDraftNumber] = useState<string | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<Id<"requests"> | null>(null);

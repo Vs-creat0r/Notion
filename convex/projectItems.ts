@@ -96,7 +96,7 @@ export const createItem = mutation({
     unit: v.optional(v.string()),
     hsnSacCode: v.optional(v.string()),
     quantity: v.number(),
-    rate: v.number(),
+    rate: v.optional(v.number()),
     photos: v.optional(v.array(v.object({
       imageUrl: v.string(),
       imageKey: v.string(),
@@ -223,6 +223,36 @@ export const deleteItem = mutation({
   },
 });
 
+export const unfreezeItem = mutation({
+  args: { itemId: v.id("projectItems") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Not authenticated");
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", userId))
+      .first();
+
+    if (!currentUser) throw new ConvexError("User not found");
+
+    if (currentUser.role !== "manager" && currentUser.role !== "purchase_officer") {
+      throw new ConvexError("Unauthorized: Only managers and purchase officers can unfreeze items");
+    }
+
+    const item = await ctx.db.get(args.itemId);
+    if (!item) throw new ConvexError("Item not found");
+
+    await ctx.db.patch(args.itemId, {
+      sentToProcurement: false,
+      sentToProcurementAt: undefined,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
 /**
  * Send selected project items to the procurement pipeline.
  * Creates material requests (RFQ style) with status "ready_for_cc"
@@ -307,10 +337,18 @@ export const sendItemsToProcurement = mutation({
         itemOrder: i + 1,
         status: "ready_for_cc", // Skip approval, go directly to CC queue
         isRFQ: true, // Mark as RFQ-originated
+        projectId: args.projectId, // Associate request with the project
         createdAt: now,
         updatedAt: now,
       });
       requestIds.push(requestId);
+
+      // Freeze item
+      await ctx.db.patch(itemId, {
+        sentToProcurement: true,
+        sentToProcurementAt: now,
+        updatedAt: now,
+      });
     }
 
     // Audit log

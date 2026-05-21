@@ -16,6 +16,7 @@ export default function RequestsPageClient() {
   useEffect(() => {
     // Check if create=true is in the URL
     const shouldCreate = searchParams.get('create') === 'true';
+    const requestId = searchParams.get('requestId');
 
     if (shouldCreate) {
       // Trigger the form open event
@@ -25,6 +26,16 @@ export default function RequestsPageClient() {
       // Clean up the URL by removing the query parameter
       const url = new URL(window.location.href);
       url.searchParams.delete('create');
+      window.history.replaceState({}, '', url.toString());
+    }
+
+    if (requestId) {
+      // Dispatch an event to open request details
+      const event = new CustomEvent('openRequestDetails', { detail: requestId });
+      window.dispatchEvent(event);
+
+      const url = new URL(window.location.href);
+      url.searchParams.delete('requestId');
       window.history.replaceState({}, '', url.toString());
     }
   }, [searchParams]);

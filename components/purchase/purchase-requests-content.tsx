@@ -97,6 +97,19 @@ export function PurchaseRequestsContent() {
   const [showDirectCCDialog, setShowDirectCCDialog] = useState(false);
   const [showDirectDCDialog, setShowDirectDCDialog] = useState(false);
 
+  // Read requestId from URL if present
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      const reqId = url.searchParams.get("requestId");
+      if (reqId) {
+        setSelectedRequestId(reqId as Id<"requests">);
+        url.searchParams.delete("requestId");
+        window.history.replaceState({}, "", url.toString());
+      }
+    }
+  }, []);
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -661,7 +674,7 @@ export function PurchaseRequestsContent() {
               </Button>
             </div>
 
-            <div className="flex gap-2 items-center">
+            <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
               {/* Status Filter */}
               <div className="flex-1 sm:flex-none sm:w-[250px]">
                 {isHydrated ? (
