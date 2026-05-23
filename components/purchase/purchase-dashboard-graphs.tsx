@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -18,8 +25,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   PieChart,
   Pie,
   Cell,
@@ -31,6 +38,7 @@ import { Loader2, TrendingUp, AlertCircle, CheckCircle2, Clock } from "lucide-re
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export function PurchaseDashboardGraphs() {
+  const [timeRangeDays, setTimeRangeDays] = useState(7);
   const requestsQuery = useQuery(api.requests.getAllRequests);
   const purchaseOrdersQuery = useQuery(api.purchaseOrders.getAllPurchaseOrders);
 
@@ -38,12 +46,12 @@ export function PurchaseDashboardGraphs() {
   const requests = requestsQuery || [];
   const purchaseOrders = purchaseOrdersQuery || [];
 
-  // 1. Daily Action Trend (Last 7 Days)
+  // 1. Daily Action Trend
   const dailyTrendData = useMemo(() => {
     if (!requests.length && !purchaseOrders.length) return [];
     
     const data = [];
-    for (let i = 6; i >= 0; i--) {
+    for (let i = timeRangeDays - 1; i >= 0; i--) {
       const date = subDays(new Date(), i);
       const newRequests = requests.filter(r => isSameDay(new Date(r._creationTime), date)).length;
       const newPOs = purchaseOrders.filter(po => isSameDay(new Date(po._creationTime), date)).length;
@@ -55,17 +63,21 @@ export function PurchaseDashboardGraphs() {
       });
     }
     return data;
-  }, [requests, purchaseOrders]);
+  }, [requests, purchaseOrders, timeRangeDays]);
+
+  // Filter requests based on time range for aggregate charts
+  const cutoffDate = useMemo(() => subDays(new Date(), timeRangeDays).getTime(), [timeRangeDays]);
+  const filteredRequests = useMemo(() => requests.filter(r => r._creationTime >= cutoffDate), [requests, cutoffDate]);
 
   // 2. Request Status Funnel
   const requestStatusData = useMemo(() => {
-    if (!requests.length) return [];
+    if (!filteredRequests.length) return [];
     
-    const pendingCC = requests.filter(r => r.status === "ready_for_cc").length;
-    const pendingPO = requests.filter(r => r.status === "ready_for_po").length;
-    const pendingDelivery = requests.filter(r => r.status === "ready_for_delivery").length;
-    const outForDelivery = requests.filter(r => r.status === "delivery_stage" || r.status === "delivery_processing").length;
-    const delivered = requests.filter(r => r.status === "delivered").length;
+    const pendingCC = filteredRequests.filter(r => r.status === "ready_for_cc").length;
+    const pendingPO = filteredRequests.filter(r => r.status === "ready_for_po").length;
+    const pendingDelivery = filteredRequests.filter(r => r.status === "ready_for_delivery").length;
+    const outForDelivery = filteredRequests.filter(r => r.status === "delivery_stage" || r.status === "delivery_processing").length;
+    const delivered = filteredRequests.filter(r => r.status === "delivered").length;
     
     return [
       { name: "Ready for CC", count: pendingCC, color: "#f59e0b" },
@@ -74,13 +86,13 @@ export function PurchaseDashboardGraphs() {
       { name: "Out for Delivery", count: outForDelivery, color: "#ec4899" },
       { name: "Delivered", count: delivered, color: "#10b981" },
     ];
-  }, [requests]);
+  }, [filteredRequests]);
 
-  // 3. Pending POs by Project (Using site name as proxy if project not populated directly)
+  // 3. Pending POs by Project
   const pendingPOsBySite = useMemo(() => {
-    if (!requests.length) return [];
+    if (!filteredRequests.length) return [];
     
-    const readyForPO = requests.filter(r => r.status === "ready_for_po");
+    const readyForPO = filteredRequests.filter(r => r.status === "ready_for_po");
     const grouped = readyForPO.reduce((acc, req) => {
       const siteName = req.site?.name || "Unknown Site";
       acc[siteName] = (acc[siteName] || 0) + 1;
@@ -91,7 +103,7 @@ export function PurchaseDashboardGraphs() {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5); // Top 5
-  }, [requests]);
+  }, [filteredRequests]);
 
   // Key Metrics
   const metrics = useMemo(() => {
@@ -122,6 +134,22 @@ export function PurchaseDashboardGraphs() {
 
   return (
     <div className="space-y-6">
+      {/* Global Filters */}
+      <div className="flex justify-end">
+        <div className="w-[180px]">
+          <Select value={timeRangeDays.toString()} onValueChange={(v) => setTimeRangeDays(parseInt(v))}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select Time Range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7">Last 7 Days</SelectItem>
+              <SelectItem value="30">Last 30 Days</SelectItem>
+              <SelectItem value="90">Last 3 Months</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {/* Top Metrics Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -174,21 +202,31 @@ export function PurchaseDashboardGraphs() {
         <Card className="col-span-1 md:col-span-2 lg:col-span-4">
           <CardHeader>
             <CardTitle>Daily Processing Trend</CardTitle>
-            <CardDescription>New requests vs Purchase Orders created (Last 7 Days)</CardDescription>
+            <CardDescription>New requests vs Purchase Orders created</CardDescription>
           </CardHeader>
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dailyTrendData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <AreaChart data={dailyTrendData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="colorRfqs" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorPos" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
                 <Tooltip 
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(4px)' }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
-                <Line type="monotone" dataKey="New RFQs" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="POs Created" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-              </LineChart>
+                <Area type="monotone" dataKey="New RFQs" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRfqs)" activeDot={{ r: 6 }} />
+                <Area type="monotone" dataKey="POs Created" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorPos)" activeDot={{ r: 6 }} />
+              </AreaChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
