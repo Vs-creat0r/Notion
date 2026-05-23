@@ -628,5 +628,27 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_category", ["categoryId"])
     .index("by_created_by", ["createdBy"]),
+
+  // ============================================================================
+  // Daily Reports Table
+  // ============================================================================
+  dailyReports: defineTable({
+    userId: v.id("users"),              // Who submitted the report
+    reportDate: v.string(),             // "YYYY-MM-DD" format
+    activities: v.array(v.object({      // Auto-collected activities
+      time: v.string(),                 // "HH:mm"
+      action: v.string(),               // e.g. "Created PO PO-045"
+      entityType: v.optional(v.string()), // "po", "request", "grn", etc.
+      entityId: v.optional(v.string()),
+    })),
+    additionalNotes: v.optional(v.string()), // Text the user typed
+    sentToManagerIds: v.optional(v.array(v.id("users"))), // Managers it was sent to
+    sentAt: v.optional(v.number()),     // When it was sent
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_report_date", ["reportDate"])
+    .index("by_user_date", ["userId", "reportDate"]),
 });
 

@@ -115,6 +115,12 @@ const navigationItems: NavigationItem[] = [
     icon: Users,
     roles: [ROLES.MANAGER],
   },
+  {
+    label: "Daily Reports",
+    href: "/dashboard/manager/reports",
+    icon: ClipboardList,
+    roles: [ROLES.MANAGER],
+  },
 
   {
     label: "Logs",

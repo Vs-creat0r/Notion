@@ -152,9 +152,10 @@ function DraggableNoteCard({
   return (
     <>
       <div
+        id={`task-${note._id}`}
         ref={cardRef}
         className={cn(
-          "relative transition-transform duration-200",
+          "relative transition-transform duration-200 scroll-m-4",
           isDragging && "opacity-50 z-50"
         )}
         onMouseDown={handleMouseDown}
@@ -368,6 +369,25 @@ export function StickyNotesWindow({
 
   const groupedActiveNotes = groupNotesByDate(filteredActiveNotes);
   const groupedCompletedNotes = groupNotesByDate(filteredCompletedNotes);
+
+  // Scroll to task if hash is present (must be after groupedActiveNotes is defined)
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash) {
+      const hash = window.location.hash;
+      if (hash.startsWith("#task-")) {
+        setTimeout(() => {
+          const element = document.getElementById(hash.substring(1));
+          if (element) {
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+            element.classList.add("ring-2", "ring-primary", "ring-offset-2", "transition-all", "duration-1000");
+            setTimeout(() => {
+              element.classList.remove("ring-2", "ring-primary", "ring-offset-2");
+            }, 2000);
+          }
+        }, 300);
+      }
+    }
+  }, [filteredActiveNotes.length, filteredCompletedNotes.length]);
 
   const handleCreate = async (data: any) => {
     try {

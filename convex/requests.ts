@@ -658,8 +658,8 @@ export const getAllRequests = query({
 
     if (!currentUser) return [];
 
-    // Only managers can view all requests
-    if (currentUser.role !== "manager") {
+    // Only managers and purchase officers can view all requests
+    if (currentUser.role !== "manager" && currentUser.role !== "purchase_officer") {
       return [];
     }
 

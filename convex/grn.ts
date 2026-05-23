@@ -222,6 +222,14 @@ export const createGRN = mutation({
                     updatedAt: now,
                 });
             }
+        } else {
+            // Partially received, update request status to delivery_processing
+            if (po.requestId) {
+                await ctx.db.patch(po.requestId, {
+                    status: "delivery_processing",
+                    updatedAt: now,
+                });
+            }
         }
 
         // Add to log
@@ -344,9 +352,10 @@ export const createGRNFromDelivery = mutation({
                 updatedAt: now,
             });
 
-            // REDUCE original request (stays in pending_po/current status)
+            // REDUCE original request and mark as partially delivered
             await ctx.db.patch(request._id, {
                 quantity: request.quantity - args.deliveryQuantity,
+                status: "delivery_processing",
                 updatedAt: now,
             });
         } else {

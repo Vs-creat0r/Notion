@@ -1,306 +1,603 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery } from "convex/react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { toast } from "sonner";
+import { format, isSameDay, startOfDay, addDays } from "date-fns";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  Legend
-} from "recharts";
-import { format, subDays, isSameDay } from "date-fns";
-import { Loader2, TrendingUp, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+    Loader2,
+    AlertCircle,
+    CheckCircle2,
+    Clock,
+    ArrowRight,
+    Activity,
+    CalendarDays,
+    FolderKanban,
+    ListChecks,
+    FileText,
+    History,
+    ChevronRight,
+    PackageCheck,
+    PenLine,
+    Send,
+    ChevronsUp,
+    Equal,
+    ChevronsDown,
+    Calendar as CalendarIcon,
+    X,
+    MessageSquare,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { DailyReportDialog } from "./daily-report-dialog";
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+/* ── helpers ─────────────────────────────────────────── */
+function fmtDate(ts: number | undefined | null): string {
+    if (!ts) return "—";
+    return format(new Date(ts), "dd MMM yy");
+}
 
-export function PurchaseDashboardGraphs() {
-  const [timeRangeDays, setTimeRangeDays] = useState(7);
-  const requestsQuery = useQuery(api.requests.getAllRequests);
-  const purchaseOrdersQuery = useQuery(api.purchaseOrders.getAllPurchaseOrders);
+/* ── Inline Date Picker (simple native input) ────────── */
+function InlineDateFilter({
+    value,
+    onChange,
+    label,
+}: {
+    value: Date | null;
+    onChange: (d: Date | null) => void;
+    label?: string;
+}) {
+    const dateStr = value ? format(value, "yyyy-MM-dd") : "";
+    const inputRef = useRef<HTMLInputElement>(null);
 
-  const isLoading = requestsQuery === undefined || purchaseOrdersQuery === undefined;
-  const requests = requestsQuery || [];
-  const purchaseOrders = purchaseOrdersQuery || [];
-
-  // 1. Daily Action Trend
-  const dailyTrendData = useMemo(() => {
-    if (!requests.length && !purchaseOrders.length) return [];
-    
-    const data = [];
-    for (let i = timeRangeDays - 1; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      const newRequests = requests.filter(r => isSameDay(new Date(r._creationTime), date)).length;
-      const newPOs = purchaseOrders.filter(po => isSameDay(new Date(po._creationTime), date)).length;
-      
-      data.push({
-        name: format(date, "MMM dd"),
-        "New RFQs": newRequests,
-        "POs Created": newPOs,
-      });
-    }
-    return data;
-  }, [requests, purchaseOrders, timeRangeDays]);
-
-  // Filter requests based on time range for aggregate charts
-  const cutoffDate = useMemo(() => subDays(new Date(), timeRangeDays).getTime(), [timeRangeDays]);
-  const filteredRequests = useMemo(() => requests.filter(r => r._creationTime >= cutoffDate), [requests, cutoffDate]);
-
-  // 2. Request Status Funnel
-  const requestStatusData = useMemo(() => {
-    if (!filteredRequests.length) return [];
-    
-    const pendingCC = filteredRequests.filter(r => r.status === "ready_for_cc").length;
-    const pendingPO = filteredRequests.filter(r => r.status === "ready_for_po").length;
-    const pendingDelivery = filteredRequests.filter(r => r.status === "ready_for_delivery").length;
-    const outForDelivery = filteredRequests.filter(r => r.status === "delivery_stage" || r.status === "delivery_processing").length;
-    const delivered = filteredRequests.filter(r => r.status === "delivered").length;
-    
-    return [
-      { name: "Ready for CC", count: pendingCC, color: "#f59e0b" },
-      { name: "Ready for PO", count: pendingPO, color: "#3b82f6" },
-      { name: "Ready Delivery", count: pendingDelivery, color: "#8b5cf6" },
-      { name: "Out for Delivery", count: outForDelivery, color: "#ec4899" },
-      { name: "Delivered", count: delivered, color: "#10b981" },
-    ];
-  }, [filteredRequests]);
-
-  // 3. Pending POs by Project
-  const pendingPOsBySite = useMemo(() => {
-    if (!filteredRequests.length) return [];
-    
-    const readyForPO = filteredRequests.filter(r => r.status === "ready_for_po");
-    const grouped = readyForPO.reduce((acc, req) => {
-      const siteName = req.site?.name || "Unknown Site";
-      acc[siteName] = (acc[siteName] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    return Object.entries(grouped)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5); // Top 5
-  }, [filteredRequests]);
-
-  // Key Metrics
-  const metrics = useMemo(() => {
-    const today = new Date();
-    const posToday = purchaseOrders.filter(po => isSameDay(new Date(po._creationTime), today)).length;
-    
-    // Calculate spend today (approximation from PO items)
-    let spendToday = 0;
-    purchaseOrders.filter(po => isSameDay(new Date(po._creationTime), today)).forEach(po => {
-      spendToday += (po.totalAmount || 0);
-    });
-
-    return {
-      pendingRFQs: requests.filter(r => r.status === "ready_for_cc").length,
-      pendingPOs: requests.filter(r => r.status === "ready_for_po").length,
-      activeDeliveries: purchaseOrders.filter(po => po.status === "ordered").length,
-      spendToday: spendToday
+    const handleClick = (e: React.MouseEvent) => {
+        // Don't open picker if clicking the clear button
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-clear-btn]')) return;
+        
+        // Programmatically open the native date picker
+        try {
+            inputRef.current?.showPicker();
+        } catch {
+            // Fallback: focus and click the input for older browsers
+            inputRef.current?.focus();
+            inputRef.current?.click();
+        }
     };
-  }, [requests, purchaseOrders]);
 
-  if (isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-card">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Global Filters */}
-      <div className="flex justify-end">
-        <div className="w-[180px]">
-          <Select value={timeRangeDays.toString()} onValueChange={(v) => setTimeRangeDays(parseInt(v))}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select Time Range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">Last 7 Days</SelectItem>
-              <SelectItem value="30">Last 30 Days</SelectItem>
-              <SelectItem value="90">Last 3 Months</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Top Metrics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pending CC / RFQs</CardTitle>
-            <Clock className="h-4 w-4 text-amber-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.pendingRFQs}</div>
-            <p className="text-xs text-muted-foreground mt-1">Requires your action</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pending Purchase Orders</CardTitle>
-            <AlertCircle className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.pendingPOs}</div>
-            <p className="text-xs text-muted-foreground mt-1">Ready to be created</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active POs</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.activeDeliveries}</div>
-            <p className="text-xs text-muted-foreground mt-1">Currently in progress</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Today's PO Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{metrics.spendToday.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">{purchaseOrders.filter(po => isSameDay(new Date(po._creationTime), new Date())).length} POs processed today</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-7">
-        {/* Daily Action Trend */}
-        <Card className="col-span-1 md:col-span-2 lg:col-span-4">
-          <CardHeader>
-            <CardTitle>Daily Processing Trend</CardTitle>
-            <CardDescription>New requests vs Purchase Orders created</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyTrendData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <defs>
-                  <linearGradient id="colorRfqs" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorPos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(4px)' }}
-                />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
-                <Area type="monotone" dataKey="New RFQs" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRfqs)" activeDot={{ r: 6 }} />
-                <Area type="monotone" dataKey="POs Created" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorPos)" activeDot={{ r: 6 }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Funnel/Status Chart */}
-        <Card className="col-span-1 md:col-span-2 lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Pipeline Breakdown</CardTitle>
-            <CardDescription>Current status of all active items</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={requestStatusData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e5e7eb" />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6b7280' }} />
-                <Tooltip 
-                  cursor={{ fill: '#f3f4f6' }}
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24}>
-                  {requestStatusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Top Sites by Pending POs */}
-        <Card className="col-span-1 md:col-span-2 lg:col-span-7">
-          <CardHeader>
-            <CardTitle>Pending POs by Site</CardTitle>
-            <CardDescription>Top sites awaiting purchase order generation</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[250px] flex items-center justify-center">
-            {pendingPOsBySite.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pendingPOsBySite}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {pendingPOsBySite.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Legend 
-                    layout="vertical" 
-                    verticalAlign="middle" 
-                    align="right"
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: '11px' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex flex-col items-center justify-center text-muted-foreground">
-                <CheckCircle2 className="h-10 w-10 mb-2 opacity-20" />
-                <p className="text-sm">No pending POs for any site!</p>
-              </div>
+        <div
+            className="group relative inline-flex items-center gap-1.5 cursor-pointer select-none px-3 py-1.5 -my-1.5 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50"
+            onClick={handleClick}
+        >
+            <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            {label && (
+                <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors">
+                    {label}
+                </span>
             )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
+            <span
+                className={cn(
+                    "text-xs font-medium transition-colors group-hover:text-primary",
+                    value ? "text-foreground" : "text-muted-foreground italic"
+                )}
+            >
+                {value ? format(value, "dd MMM") : "Pick date"}
+            </span>
+            <input
+                ref={inputRef}
+                type="date"
+                value={dateStr}
+                onChange={(e) => {
+                    if (e.target.value) {
+                        onChange(new Date(e.target.value + "T00:00:00"));
+                    } else {
+                        onChange(null);
+                    }
+                }}
+                className="absolute inset-0 opacity-0 pointer-events-none w-0 h-0"
+                tabIndex={-1}
+            />
+            {value && (
+                <button
+                    type="button"
+                    data-clear-btn
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onChange(null);
+                    }}
+                    className="text-muted-foreground hover:text-red-500 rounded p-0.5 z-10 relative"
+                    title="Clear date"
+                >
+                    <X className="h-3 w-3" />
+                </button>
+            )}
+        </div>
+    );
+}
+
+
+
+/* ══════════════════════════════════════════════════════════
+   MAIN COMPONENT
+   ══════════════════════════════════════════════════════════ */
+export function PurchaseDashboardGraphs() {
+    const router = useRouter();
+
+    // ── Global Filters ──
+    const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
+    const [globalDate, setGlobalDate] = useState<Date | null>(null);
+
+    // ── Section-level date overrides ──
+    const [processDate, setProcessDate] = useState<Date | null>(null);
+    const [taskDate, setTaskDate] = useState<Date | null>(null);
+    const [activityDate, setActivityDate] = useState<Date | null>(null);
+
+    // ── Daily Report ──
+    const [reportOpen, setReportOpen] = useState(false);
+
+    // ── Data Queries ──
+    const projects = useQuery(api.projects.getAllProjects, {});
+    const requestsQuery = useQuery(api.requests.getAllRequests, {});
+    const purchaseOrdersQuery = useQuery(api.purchaseOrders.getAllPurchaseOrders, {});
+    const stickyNotesQuery = useQuery(api.stickyNotes.list, {});
+    const currentUser = useQuery(api.users.getCurrentUser, {});
+
+    // ── Mutations ──
+
+    // Activity date for fetching logs
+    const effectiveActivityDate = activityDate || globalDate || new Date();
+    const activityDateStr = format(effectiveActivityDate, "yyyy-MM-dd");
+    const activityLogs = useQuery(api.dailyReports.getDailyActivity, { date: activityDateStr });
+
+    const isLoading = requestsQuery === undefined || purchaseOrdersQuery === undefined;
+    const requests = requestsQuery || [];
+    const purchaseOrders = purchaseOrdersQuery || [];
+
+    // ── Project Filter ──
+    const filteredByProject = useMemo(() => {
+        if (selectedProjectId === "all") return requests;
+        if (selectedProjectId === "none") return requests.filter((r) => !r.projectId);
+        return requests.filter((r) => r.projectId === selectedProjectId);
+    }, [requests, selectedProjectId]);
+
+    const filteredPOsByProject = useMemo(() => {
+        if (selectedProjectId === "all") return purchaseOrders;
+        if (selectedProjectId === "none") return purchaseOrders.filter((po) => !po.projectId);
+        return purchaseOrders.filter((po) => po.projectId === selectedProjectId);
+    }, [purchaseOrders, selectedProjectId]);
+
+    // ── Effective dates for each section ──
+    const effectiveProcessDate = processDate || globalDate;
+    const effectiveTaskDate = taskDate || globalDate;
+
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 1: Process States
+    // ═══════════════════════════════════════════════════════
+    const processStates = useMemo(() => {
+        // Process states show current pipeline status — no date filter needed
+        // as these represent what's currently pending regardless of creation date
+        const reqs = filteredByProject;
+
+        const ccPending = reqs.filter(
+            (r) => r.status === "ready_for_cc" || r.status === "cc_pending" || r.status === "cc_rejected"
+        ).length;
+
+        const poUnsigned = reqs.filter(
+            (r) => r.status === "pending_po" || r.status === "sign_pending"
+        ).length;
+
+        const poSigned = reqs.filter(
+            (r) => r.status === "ready_for_delivery" || r.status === "out_for_delivery"
+        ).length;
+
+        // Partially delivered: requests where some qty was delivered but not all
+        const partiallyDelivered = reqs.filter(
+            (r) => r.status === "delivery_stage" || r.status === "delivery_processing"
+        ).length;
+
+        return { ccPending, poUnsigned, poSigned, partiallyDelivered };
+    }, [filteredByProject]);
+
+    const processCards = [
+        {
+            title: "CC Pending",
+            value: processStates.ccPending,
+            subtitle: "Awaiting cost comparison",
+            icon: Clock,
+            borderColor: "border-l-amber-500",
+            bgTint: "bg-amber-500/5",
+            iconColor: "text-amber-500",
+            href: "/dashboard/purchase/requests?status=cc_pending,ready_for_cc,cc_rejected",
+        },
+        {
+            title: "PO Unsigned",
+            value: processStates.poUnsigned,
+            subtitle: "Awaiting manager signature",
+            icon: PenLine,
+            borderColor: "border-l-blue-500",
+            bgTint: "bg-blue-500/5",
+            iconColor: "text-blue-500",
+            href: "/dashboard/purchase/requests?status=pending_po,sign_pending,sign_rejected",
+        },
+        {
+            title: "PO Signed",
+            value: processStates.poSigned,
+            subtitle: "Ready for delivery",
+            icon: CheckCircle2,
+            borderColor: "border-l-emerald-500",
+            bgTint: "bg-emerald-500/5",
+            iconColor: "text-emerald-500",
+            href: "/dashboard/purchase/requests?status=ready_for_delivery,out_for_delivery,delivery_processing,delivery_stage,delivered",
+        },
+        {
+            title: "Partially Delivered",
+            value: processStates.partiallyDelivered,
+            subtitle: "Awaiting remaining items",
+            icon: PackageCheck,
+            borderColor: "border-l-purple-500",
+            bgTint: "bg-purple-500/5",
+            iconColor: "text-purple-500",
+            href: "/dashboard/purchase/requests?status=delivery_stage,delivery_processing",
+        },
+    ];
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 2: Task Assignment
+    // ═══════════════════════════════════════════════════════
+    const tasks = useMemo(() => {
+        if (!stickyNotesQuery || !currentUser) return [];
+        let notes = stickyNotesQuery.filter(
+            (n: any) =>
+                !n.isDeleted &&
+                !n.isCompleted &&
+                (n.assignedTo === currentUser._id || n.createdBy === currentUser._id)
+        );
+        if (effectiveTaskDate) {
+            notes = notes.filter((n: any) => {
+                if (n.dueDate) return isSameDay(new Date(n.dueDate), effectiveTaskDate);
+                return isSameDay(new Date(n.createdAt), effectiveTaskDate);
+            });
+        }
+        return notes;
+    }, [stickyNotesQuery, currentUser, effectiveTaskDate]);
+
+
+    // ── Loading state ──
+    if (isLoading) {
+        return (
+            <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-card">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {/* ═══════════════════════════════════════════════
+                GLOBAL FILTER BAR
+            ═══════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 px-5 py-4">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary/10">
+                            <FolderKanban className="h-4 w-4 text-primary" />
+                        </div>
+                        <span className="text-sm font-semibold">Dashboard</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
+                        {/* Project Filter */}
+                        <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                            <SelectTrigger className="h-8 w-[180px] text-xs bg-muted/30 border-muted-foreground/20">
+                                <FolderKanban className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                                <SelectValue placeholder="All Projects" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Projects</SelectItem>
+                                <SelectItem value="none">No Project</SelectItem>
+                                {projects?.map((p) => (
+                                    <SelectItem key={p._id} value={p._id}>
+                                        {p.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+
+                        {/* Global Date */}
+                        <InlineDateFilter
+                            value={globalDate}
+                            onChange={setGlobalDate}
+                            label="Date:"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 1: PROCESS STATES
+            ═══════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-amber-500/10">
+                            <Activity className="h-4 w-4 text-amber-500" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold">Process States</h3>
+                            <p className="text-xs text-muted-foreground">Current pipeline overview</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-border/40">
+                    {processCards.map((card) => (
+                        <div
+                            key={card.title}
+                            className={`flex flex-col justify-between p-5 border-l-[3px] ${card.borderColor} ${card.bgTint} bg-card hover:bg-muted/30 transition-colors group cursor-pointer`}
+                            onClick={() => router.push(card.href)}
+                        >
+                            <div className="flex items-start justify-between mb-3">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                    {card.title}
+                                </p>
+                                <div
+                                    className={`flex items-center justify-center h-8 w-8 rounded-lg bg-background border border-border/50 ${card.iconColor}`}
+                                >
+                                    <card.icon className="h-4 w-4" />
+                                </div>
+                            </div>
+                            <div className="text-3xl font-bold tracking-tight mb-1">{card.value}</div>
+                            <div className="flex items-center justify-between mt-2">
+                                <p className="text-xs text-muted-foreground">{card.subtitle}</p>
+                                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-primary flex items-center gap-0.5">
+                                    View <ArrowRight className="h-3 w-3" />
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 2: TASK ASSIGNMENT
+            ═══════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-blue-500/10">
+                            <ListChecks className="h-4 w-4 text-blue-500" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold">Task Assignment</h3>
+                            <p className="text-xs text-muted-foreground">
+                                {tasks.length} active task{tasks.length !== 1 && "s"}
+                            </p>
+                        </div>
+                    </div>
+                    <InlineDateFilter value={taskDate} onChange={setTaskDate} />
+                </div>
+
+                <div className="p-5">
+                    {stickyNotesQuery === undefined ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : tasks.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground">
+                            <CheckCircle2 className="h-10 w-10 opacity-20" />
+                            <p className="text-sm">No pending tasks</p>
+                        </div>
+                    ) : (
+                        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {tasks.slice(0, 8).map((task: any) => {
+                                const isFromManager =
+                                    currentUser && task.createdBy !== currentUser._id;
+                                const priorityMap: Record<string, { border: string; icon: React.ReactNode; label: string }> = {
+                                    high: {
+                                        border: "border-l-red-500",
+                                        icon: <ChevronsUp className="h-3.5 w-3.5 text-red-500" />,
+                                        label: "High",
+                                    },
+                                    medium: {
+                                        border: "border-l-orange-500",
+                                        icon: <Equal className="h-3.5 w-3.5 text-orange-500" />,
+                                        label: "Medium",
+                                    },
+                                    low: {
+                                        border: "border-l-blue-500",
+                                        icon: <ChevronsDown className="h-3.5 w-3.5 text-blue-500" />,
+                                        label: "Low",
+                                    },
+                                };
+                                const priorityConfig = priorityMap[task.priority || "medium"] || {
+                                    border: "border-l-border",
+                                    icon: null,
+                                    label: "",
+                                };
+
+                                const isOverdue =
+                                    task.dueDate && Date.now() > task.dueDate && !task.isCompleted;
+
+                                return (
+                                    <div
+                                        key={task._id}
+                                        className={cn(
+                                            "rounded-lg border border-border bg-card p-4 border-l-[3px] hover:shadow-md transition-shadow",
+                                            priorityConfig.border,
+                                            isOverdue && "shadow-red-500/10 shadow-sm"
+                                        )}
+                                    >
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                            <h4 className="text-sm font-semibold line-clamp-2 leading-tight">
+                                                {task.title}
+                                            </h4>
+                                            <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                                                {priorityConfig.icon && (
+                                                    <div>{priorityConfig.icon}</div>
+                                                )}
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-6 w-6 rounded-full hover:bg-muted-foreground/10"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const url = new URL(window.location.href);
+                                                        url.searchParams.set("sticky-notes", "true");
+                                                        url.hash = `task-${task._id}`;
+                                                        router.push(url.pathname + url.search + url.hash);
+                                                    }}
+                                                >
+                                                    <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        {task.content && (
+                                            <p className="text-xs text-muted-foreground line-clamp-2 mb-3 leading-relaxed">
+                                                {task.content}
+                                            </p>
+                                        )}
+                                        <div className="space-y-1.5 mt-auto">
+                                            {task.dueDate && (
+                                                <div
+                                                    className={cn(
+                                                        "flex items-center gap-1.5 text-xs",
+                                                        isOverdue
+                                                            ? "text-red-600 dark:text-red-400"
+                                                            : "text-muted-foreground"
+                                                    )}
+                                                >
+                                                    <Clock className="h-3 w-3" />
+                                                    <span>
+                                                        {isOverdue ? "Overdue: " : "Due: "}
+                                                        {fmtDate(task.dueDate)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div className="flex items-center gap-1.5">
+                                                <Badge
+                                                    variant="secondary"
+                                                    className="text-[10px] px-1.5 py-0"
+                                                >
+                                                    {isFromManager
+                                                        ? `From ${task.creator?.fullName || "Manager"}`
+                                                        : "Self"}
+                                                </Badge>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {tasks.length > 8 && (
+                        <div className="flex justify-center mt-4">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs text-primary gap-1"
+                                onClick={() => {
+                                    // Open sticky notes panel
+                                    const url = new URL(window.location.href);
+                                    url.searchParams.set("sticky-notes", "true");
+                                    router.push(url.pathname + url.search);
+                                }}
+                            >
+                                View all {tasks.length} tasks
+                                <ChevronRight className="h-3 w-3" />
+                            </Button>
+                        </div>
+                    )}
+            </div>
+        </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 4: ACTIVITY LOGS
+            ═══════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-purple-500/10">
+                            <FileText className="h-4 w-4 text-purple-500" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold">Activity Logs</h3>
+                            <p className="text-xs text-muted-foreground">
+                                {activityLogs?.length ?? 0} actions recorded
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <InlineDateFilter value={activityDate} onChange={setActivityDate} />
+                        <Button
+                            size="sm"
+                            variant="default"
+                            className="h-8 gap-1.5 text-xs"
+                            onClick={() => setReportOpen(true)}
+                        >
+                            <FileText className="h-3.5 w-3.5" />
+                            Daily Report
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="p-5">
+                    {activityLogs === undefined ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : activityLogs.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground">
+                            <AlertCircle className="h-10 w-10 opacity-20" />
+                            <p className="text-sm">No activities recorded for this date</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-1 rounded-lg border border-border overflow-hidden">
+                            {activityLogs.map((log, idx) => (
+                                <div
+                                    key={log._id}
+                                    className={cn(
+                                        "flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors",
+                                        idx !== activityLogs.length - 1 && "border-b border-border/50"
+                                    )}
+                                >
+                                    <div className="flex items-center gap-1.5 text-muted-foreground shrink-0 mt-0.5">
+                                        <Clock className="h-3 w-3" />
+                                        <span className="text-xs font-mono w-[75px]">{log.time}</span>
+                                    </div>
+                                    <p className="text-sm leading-relaxed flex-1">{log.action}</p>
+                                    {log.requestNumber && (
+                                        <Badge variant="secondary" className="text-[10px] shrink-0">
+                                            {log.requestNumber}
+                                        </Badge>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Daily Report Dialog */}
+            <DailyReportDialog
+                open={reportOpen}
+                onOpenChange={setReportOpen}
+                selectedDate={effectiveActivityDate}
+            />
+        </div>
+    );
 }

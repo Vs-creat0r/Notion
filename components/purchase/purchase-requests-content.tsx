@@ -57,8 +57,8 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
   pending_po: { label: "Pending PO", variant: "secondary", icon: Clock, color: "amber" },
   // Delivery statuses grouped at the end
   ready_for_delivery: { label: "Ready for Delivery", variant: "default", icon: Truck, color: "indigo" },
-  delivery_processing: { label: "Out for Delivery", variant: "secondary", icon: Truck, color: "blue" },
-  delivery_stage: { label: "Out for Delivery", variant: "secondary", icon: Truck, color: "blue" }, // Legacy support
+  delivery_processing: { label: "Partially Delivered", variant: "secondary", icon: Truck, color: "blue" },
+  delivery_stage: { label: "Partially Delivered", variant: "secondary", icon: Truck, color: "blue" }, // Legacy support
   delivered: { label: "Delivered", variant: "secondary", icon: CheckCircle, color: "green" },
 };
 
@@ -97,14 +97,27 @@ export function PurchaseRequestsContent() {
   const [showDirectCCDialog, setShowDirectCCDialog] = useState(false);
   const [showDirectDCDialog, setShowDirectDCDialog] = useState(false);
 
-  // Read requestId from URL if present
+  // Read requestId and status from URL if present
   useEffect(() => {
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
+      let changed = false;
+      
       const reqId = url.searchParams.get("requestId");
       if (reqId) {
         setSelectedRequestId(reqId as Id<"requests">);
         url.searchParams.delete("requestId");
+        changed = true;
+      }
+
+      const statusParam = url.searchParams.get("status");
+      if (statusParam) {
+        setFilterStatus(statusParam.split(","));
+        url.searchParams.delete("status");
+        changed = true;
+      }
+
+      if (changed) {
         window.history.replaceState({}, "", url.toString());
       }
     }
