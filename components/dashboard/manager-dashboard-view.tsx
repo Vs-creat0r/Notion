@@ -34,7 +34,9 @@ import {
     ListChecks,
     MessageSquare,
     Check,
-    Eye
+    Eye,
+    Table2,
+    LayoutGrid
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -224,6 +226,8 @@ export function ManagerDashboardView() {
     // ── Section 3: Followups Filters ──
     const [followupSearch, setFollowupSearch] = useState("");
     const [followupFilterStatus, setFollowupFilterStatus] = useState<"all" | "taken" | "pending">("all");
+    const [followupPage, setFollowupPage] = useState(1);
+    const [followupViewMode, setFollowupViewMode] = useState<"table" | "card">("table");
  
     // ── PDF Preview States ──
     const [pdfPreviewPoNumber, setPdfPreviewPoNumber] = useState<string | null>(null);
@@ -805,7 +809,7 @@ export function ManagerDashboardView() {
                         {/* Dropdown status filter */}
                         <Select 
                             value={followupFilterStatus} 
-                            onValueChange={(val: any) => setFollowupFilterStatus(val)}
+                            onValueChange={(val: any) => { setFollowupFilterStatus(val); setFollowupPage(1); }}
                         >
                             <SelectTrigger className="h-8 w-[140px] text-xs bg-background border-border/60">
                                 <SelectValue placeholder="All" />
@@ -822,14 +826,110 @@ export function ManagerDashboardView() {
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                             <Input
                                 value={followupSearch}
-                                onChange={e => setFollowupSearch(e.target.value)}
+                                onChange={e => { setFollowupSearch(e.target.value); setFollowupPage(1); }}
                                 placeholder="Search POs..."
                                 className="h-8 pl-8 text-xs bg-background border-border/60"
                             />
                         </div>
+
+                        <Button variant="outline" size="icon" onClick={() => setFollowupViewMode(v => v === "card" ? "table" : "card")} className="h-8 w-8 flex-shrink-0 bg-background border-border/60" title={`Switch to ${followupViewMode === "card" ? "table" : "card"} view`}>
+                            {followupViewMode === "card" ? <Table2 className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+                        </Button>
                     </div>
                 </div>
  
+                {followupViewMode === "card" ? (
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 bg-muted/5">
+                        {followupGroups.length === 0 ? (
+                            <div className="col-span-full py-8 text-center text-xs text-muted-foreground">
+                                No pending follow-ups match filters.
+                            </div>
+                        ) : (
+                            followupGroups.slice((followupPage - 1) * 5, followupPage * 5).map((g) => {
+                                const proj = projects?.find(p => p._id === g.firstItem.projectId);
+                                const vendor = vendorsQuery?.find(v => v._id === g.firstItem.selectedVendorId);
+                                const requiredDate = g.firstItem.requiredBy ? fmtDate(g.firstItem.requiredBy) : "—";
+                                const daysLeft = g.firstItem.requiredBy
+                                    ? Math.ceil((g.firstItem.requiredBy - Date.now()) / 86400000)
+                                    : null;
+                                const isUrgent = daysLeft !== null && daysLeft <= 3;
+                                const isWarning = daysLeft !== null && daysLeft > 3 && daysLeft <= 7;
+                                return (
+                                    <div key={g.key} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow-md transition-all relative">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <span className="font-bold font-mono text-primary/90 text-sm">
+                                                    {g.poNumber || g.requestNumber || "—"}
+                                                </span>
+                                                <p className="font-semibold text-foreground text-xs mt-1">{proj?.name || "No Project"}</p>
+                                                <p className="text-[10px] text-muted-foreground">{vendor?.companyName || "Unknown Vendor"}</p>
+                                            </div>
+                                            <div className="text-right flex flex-col items-end">
+                                                <span className="text-xs font-medium">{requiredDate}</span>
+                                                {isUrgent && <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider mt-0.5">Urgent</span>}
+                                                {isWarning && !isUrgent && <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider mt-0.5">{daysLeft}d left</span>}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-muted/30 p-2 rounded-md flex flex-col gap-1 max-h-24 overflow-y-auto">
+                                            {g.items.map((item: any, idx: number) => (
+                                                <div key={idx} className="flex items-center justify-between text-[11px]">
+                                                    <span className="font-semibold text-foreground truncate mr-2">{item.itemName}</span>
+                                                    <span className="text-muted-foreground font-mono shrink-0">({item.quantity} {item.unit || "nos"})</span>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="pt-1">
+                                            <EditableTalk
+                                                dateValue={(g.firstItem as any).lastTalkDate}
+                                                textValue={(g.firstItem as any).lastTalkText}
+                                                onDateChange={async (ts) => {
+                                                    try {
+                                                        await Promise.all(g.items.map(item => 
+                                                            updateLastTalkDate({ requestId: item._id, lastTalkDate: ts })
+                                                        ));
+                                                        toast.success("Follow-up date updated");
+                                                    } catch {
+                                                        toast.error("Failed to update follow-up date");
+                                                    }
+                                                }}
+                                                onTextChange={async (txt) => {
+                                                    try {
+                                                        await Promise.all(g.items.map(item => 
+                                                            updateLastTalkText({ requestId: item._id, lastTalkText: txt })
+                                                        ));
+                                                        toast.success("Follow-up notes updated");
+                                                    } catch {
+                                                        toast.error("Failed to update follow-up notes");
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div className="mt-auto pt-3 border-t border-border/40 flex justify-end">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-7 text-[11px] px-2.5 gap-1.5 border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400 w-full"
+                                                onClick={() => {
+                                                    if (g.poNumber) {
+                                                        setPdfPreviewPoNumber(g.poNumber);
+                                                        setPdfPreviewRequestId(g.firstItem._id);
+                                                    } else {
+                                                        toast.info("No PO number assigned yet");
+                                                    }
+                                                }}
+                                            >
+                                                <Eye className="h-3 w-3" /> View PO
+                                            </Button>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                ) : (
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[860px] text-left border-collapse">
                         <thead>
@@ -850,7 +950,7 @@ export function ManagerDashboardView() {
                                     </td>
                                 </tr>
                             ) : (
-                                followupGroups.map((g) => {
+                                followupGroups.slice((followupPage - 1) * 5, followupPage * 5).map((g) => {
                                     const proj = projects?.find(p => p._id === g.firstItem.projectId);
                                     const vendor = vendorsQuery?.find(v => v._id === g.firstItem.selectedVendorId);
                                     const requiredDate = g.firstItem.requiredBy ? fmtDate(g.firstItem.requiredBy) : "—";
@@ -861,7 +961,7 @@ export function ManagerDashboardView() {
                                     const isWarning = daysLeft !== null && daysLeft > 3 && daysLeft <= 7;
                                     return (
                                         <tr key={g.key} className="hover:bg-muted/10 transition-colors text-xs">
-                                            <td className="px-5 py-4 font-bold font-mono text-primary/90">
+                                            <td className="px-5 py-4 font-bold font-mono text-primary/90 text-base">
                                                 {g.poNumber || g.requestNumber || "—"}
                                             </td>
                                             <td className="px-5 py-4">
@@ -939,6 +1039,34 @@ export function ManagerDashboardView() {
                         </tbody>
                     </table>
                 </div>
+                )}
+                {followupGroups.length > 5 && (
+                    <div className="flex items-center justify-between px-5 py-3 border-t border-border/60 bg-muted/5">
+                        <div className="text-xs text-muted-foreground">
+                            Showing {Math.min((followupPage - 1) * 5 + 1, followupGroups.length)} to {Math.min(followupPage * 5, followupGroups.length)} of {followupGroups.length} follow-ups
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs bg-background"
+                                disabled={followupPage === 1}
+                                onClick={(e) => { e.stopPropagation(); setFollowupPage(p => Math.max(1, p - 1)); }}
+                            >
+                                Previous
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs bg-background"
+                                disabled={followupPage >= Math.ceil(followupGroups.length / 5)}
+                                onClick={(e) => { e.stopPropagation(); setFollowupPage(p => p + 1); }}
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ═══════════════════════════════════════════════
@@ -948,14 +1076,14 @@ export function ManagerDashboardView() {
                 className="rounded-xl border border-border bg-card shadow-sm overflow-hidden cursor-pointer hover:border-primary/30 hover:shadow-md transition-all group"
                 onClick={() => router.push("/dashboard/manager/requests?show_pending_po=true")}
             >
-                <CardHeader className="pb-2 border-b border-border/50 bg-muted/10 flex flex-row items-center justify-between space-y-0">
-                    <div>
-                        <CardTitle className="group-hover:text-primary transition-colors">Purchase Trend Analytics</CardTitle>
-                        <CardDescription>Volume of purchase orders approved by month</CardDescription>
+                <CardHeader className="pb-4 pt-6 border-b border-border/50 bg-muted/5 flex flex-col items-center justify-center space-y-2 relative">
+                    <div className="text-center">
+                        <CardTitle className="text-2xl font-bold tracking-tight group-hover:text-primary transition-colors">Purchase Trend Analytics</CardTitle>
+                        <CardDescription className="text-sm mt-1">Volume of purchase orders approved by month</CardDescription>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-2">
                         <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">Click to view pending POs</span>
-                        <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary text-xs">
+                        <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary text-xs font-semibold px-3 py-1">
                             Current Year
                         </Badge>
                     </div>
@@ -978,7 +1106,8 @@ export function ManagerDashboardView() {
                                     contentStyle={{ 
                                         borderRadius: '12px', 
                                         border: '1px solid hsl(var(--border)/0.5)', 
-                                        backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                                        backgroundColor: 'hsl(var(--popover))', 
+                                        color: 'hsl(var(--popover-foreground))',
                                         backdropFilter: 'blur(8px)', 
                                         boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)' 
                                     }}

@@ -538,8 +538,9 @@ export function PendingPODialog({ onBack, onViewPO, onCreateDirectPO, requests: 
             </div>
 
             {/* ── Row 2: Filter + Create PO ── */}
-            <div className="flex gap-2 items-center">
-                {/* Time filter */}
+            <div className="flex flex-col xl:flex-row gap-3 items-start xl:items-center justify-between">
+                <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+                    {/* Time filter */}
                 <div className="flex-1 sm:flex-none sm:w-[150px]">
                     <Popover>
                         <PopoverTrigger asChild>
@@ -643,14 +644,15 @@ export function PendingPODialog({ onBack, onViewPO, onCreateDirectPO, requests: 
                     variant="outline"
                     size="sm"
                     onClick={onBack}
-                    className="h-9 sm:h-10 gap-1.5 border-muted-foreground/30 text-muted-foreground hover:text-foreground shrink-0"
+                    className="h-9 sm:h-10 gap-1.5 border-muted-foreground/30 text-muted-foreground hover:text-foreground shrink-0 flex-1 sm:flex-none"
                 >
                     <ArrowLeft className="h-4 w-4" />
                     Requests
                 </Button>
+                </div>
 
                 {/* Right side: Create PO + Download XL */}
-                <div className="flex items-center gap-2 ml-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto ml-0 xl:ml-auto mt-2 xl:mt-0">
                     <Button
                         variant="outline"
                         onClick={handleDownloadXL}
