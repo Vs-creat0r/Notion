@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { format, isSameDay, startOfDay, addDays } from "date-fns";
@@ -39,9 +40,16 @@ import {
     Calendar as CalendarIcon,
     X,
     MessageSquare,
+    Search,
+    ChevronDown,
+    Eye,
+    BellRing,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DailyReportDialog } from "./daily-report-dialog";
+import { EditableTalk } from "./editable-talk";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { PDFPreviewDialog } from "./pdf-preview-dialog";
 
 /* ── helpers ─────────────────────────────────────────── */
 function fmtDate(ts: number | undefined | null): string {
@@ -66,7 +74,7 @@ function InlineDateFilter({
         // Don't open picker if clicking the clear button
         const target = e.target as HTMLElement;
         if (target.closest('[data-clear-btn]')) return;
-        
+
         // Programmatically open the native date picker
         try {
             inputRef.current?.showPicker();
@@ -141,9 +149,18 @@ export function PurchaseDashboardGraphs() {
     const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
     const [globalDate, setGlobalDate] = useState<Date | null>(null);
 
-    // ── Section-level date overrides ──
     const [processDate, setProcessDate] = useState<Date | null>(null);
     const [taskDate, setTaskDate] = useState<Date | null>(null);
+    const [followupDate, setFollowupDate] = useState<Date | null>(null);
+    const [followupProjectId, setFollowupProjectId] = useState<string>("all");
+    const [followupPage, setFollowupPage] = useState<number>(1);
+    const [followupSearch, setFollowupSearch] = useState("");
+    // reminderDayInputs: per-group custom day input { [groupKey]: string }
+    const [reminderDayInputs, setReminderDayInputs] = useState<Record<string, string>>({});
+    // PO Preview state
+    const [pdfPreviewPO, setPdfPreviewPO] = useState<{ poNumber: string; requestId: string } | null>(null);
+    // Activity logs pagination
+    const [activityPage, setActivityPage] = useState(1);
     const [activityDate, setActivityDate] = useState<Date | null>(null);
 
     // ── Daily Report ──
@@ -249,12 +266,94 @@ export function PurchaseDashboardGraphs() {
             value: processStates.partiallyDelivered,
             subtitle: "Awaiting remaining items",
             icon: PackageCheck,
-            borderColor: "border-l-purple-500",
-            bgTint: "bg-purple-500/5",
-            iconColor: "text-purple-500",
+            borderColor: "border-l-indigo-500",
+            bgTint: "bg-indigo-500/5",
+            iconColor: "text-indigo-500",
             href: "/dashboard/purchase/requests?status=delivery_stage,delivery_processing",
         },
     ];
+
+    // ═══════════════════════════════════════════════════════
+    // FOLLOW-UPS COMPUTATION
+    // ═══════════════════════════════════════════════════════
+    const vendorsQuery = useQuery(api.vendors.getAllVendors, {});
+    const updateLastTalkDate = useMutation(api.requests.updateLastTalkDate);
+    const updateLastTalkText = useMutation(api.requests.updateLastTalkText);
+    const followupGroups = useMemo(() => {
+        let baseReqs = requests || [];
+        if (followupProjectId !== "all") {
+            baseReqs = baseReqs.filter(r => r.projectId === followupProjectId);
+        }
+
+        const pendingReqs = baseReqs.filter(r =>
+            r.status === "pending_po" || r.status === "sign_pending"
+        );
+        const map = new Map<string, any[]>();
+        pendingReqs.forEach((r) => {
+            const key = r.poNumber ?? r.requestNumber;
+            const arr = map.get(key) || [];
+            arr.push(r);
+            map.set(key, arr);
+        });
+
+        let groups = Array.from(map.entries()).map(([key, items]) => {
+            const firstItem = items[0];
+            let totalAmount = 0;
+            items.forEach((item: any) => {
+                const quote = item.vendorQuotes?.find((q: any) => q.vendorId === item.selectedVendorId);
+                if (quote && quote.amount) totalAmount += quote.amount;
+                else if (item.quantity && quote?.unitPrice) totalAmount += item.quantity * quote.unitPrice;
+            });
+            if (totalAmount === 0 && firstItem.poNumber && purchaseOrdersQuery) {
+                const pos = purchaseOrdersQuery.filter((p: any) => p.poNumber === firstItem.poNumber);
+                totalAmount = pos.reduce((s: number, p: any) => s + (p.totalAmount || 0), 0);
+            }
+            return { key, items, firstItem, totalAmount, poNumber: firstItem.poNumber, requestNumber: firstItem.requestNumber };
+        });
+
+        const todayStart = startOfDay(new Date()).getTime();
+        const targetDateStr = followupDate ? format(followupDate, "yyyy-MM-dd") : null;
+
+        groups = groups.filter(g => {
+            const requiredBy = g.firstItem.requiredBy;
+            const lastTalk = (g.firstItem as any)?.lastTalkDate;
+
+            // If a specific date is selected, exact match on due date
+            if (targetDateStr) {
+                if (!requiredBy) return false;
+                return format(new Date(requiredBy), "yyyy-MM-dd") === targetDateStr;
+            }
+
+            // Otherwise, apply default rule:
+            // "If the due of PO < 10 days then show it on followups. 
+            // If snoozed, hide until days complete."
+
+            // Check snooze first
+            if (lastTalk && lastTalk > todayStart + 86400000) {
+                return false; // Snoozed to the future (beyond tomorrow technically, or just beyond today)
+            }
+
+            // Check due date < 10 days
+            if (requiredBy) {
+                const daysLeft = Math.ceil((requiredBy - Date.now()) / 86400000);
+                if (daysLeft <= 10) return true;
+            }
+
+            // Or if they have a snooze that has expired/arrived
+            if (lastTalk && lastTalk <= todayStart + 86400000) {
+                return true;
+            }
+
+            return false;
+        });
+
+        return groups.sort((a, b) => {
+            const aDate = (a.firstItem as any)?.lastTalkDate ?? a.firstItem.requiredBy ?? a.firstItem.createdAt;
+            const bDate = (b.firstItem as any)?.lastTalkDate ?? b.firstItem.requiredBy ?? b.firstItem.createdAt;
+            return aDate - bDate;
+        });
+    }, [requests, followupProjectId, purchaseOrdersQuery, followupDate]);
+
 
     // ═══════════════════════════════════════════════════════
     // SECTION 2: Task Assignment
@@ -473,29 +572,14 @@ export function PurchaseDashboardGraphs() {
                                         )}
                                         <div className="space-y-1.5 mt-auto">
                                             {task.dueDate && (
-                                                <div
-                                                    className={cn(
-                                                        "flex items-center gap-1.5 text-xs",
-                                                        isOverdue
-                                                            ? "text-red-600 dark:text-red-400"
-                                                            : "text-muted-foreground"
-                                                    )}
-                                                >
+                                                <div className={cn("flex items-center gap-1.5 text-xs", isOverdue ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>
                                                     <Clock className="h-3 w-3" />
-                                                    <span>
-                                                        {isOverdue ? "Overdue: " : "Due: "}
-                                                        {fmtDate(task.dueDate)}
-                                                    </span>
+                                                    <span>{isOverdue ? "Overdue: " : "Due: "}{fmtDate(task.dueDate)}</span>
                                                 </div>
                                             )}
                                             <div className="flex items-center gap-1.5">
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="text-[10px] px-1.5 py-0"
-                                                >
-                                                    {isFromManager
-                                                        ? `From ${task.creator?.fullName || "Manager"}`
-                                                        : "Self"}
+                                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                                    {isFromManager ? `From ${task.creator?.fullName || "Manager"}` : "Self"}
                                                 </Badge>
                                             </div>
                                         </div>
@@ -511,7 +595,6 @@ export function PurchaseDashboardGraphs() {
                                 size="sm"
                                 className="text-xs text-primary gap-1"
                                 onClick={() => {
-                                    // Open sticky notes panel
                                     const url = new URL(window.location.href);
                                     url.searchParams.set("sticky-notes", "true");
                                     router.push(url.pathname + url.search);
@@ -522,8 +605,338 @@ export function PurchaseDashboardGraphs() {
                             </Button>
                         </div>
                     )}
+                </div>
             </div>
-        </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 3: FOLLOW-UPS — Professional Table
+            ═══════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-border overflow-hidden flex flex-col" style={{ background: 'hsl(var(--card))' }}>
+                {/* ── Header ── */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-5 py-3.5 border-b border-border/60 gap-3">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-orange-500/15">
+                            <MessageSquare className="h-4 w-4 text-orange-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold tracking-tight">Vendor Follow-ups</h3>
+                            <p className="text-[11px] text-muted-foreground">
+                                {followupGroups.length} pending PO{followupGroups.length !== 1 && "s"}
+                            </p>
+                        </div>
+                    </div>
+                    {/* Search bar */}
+                    <div className="relative w-full sm:w-56">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                        <Input
+                            value={followupSearch}
+                            onChange={e => { setFollowupSearch(e.target.value); setFollowupPage(1); }}
+                            placeholder="Search PO, item, desc…"
+                            className="h-8 pl-8 pr-3 text-xs bg-muted/40 border-border/60 focus-visible:ring-1"
+                        />
+                        {followupSearch && (
+                            <button onClick={() => setFollowupSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                                <X className="h-3 w-3" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* ── Table Container (scrollable on mobile) ── */}
+                <div className="overflow-x-auto">
+                    {followupGroups.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+                            <CheckCircle2 className="h-10 w-10 opacity-20" />
+                            <p className="text-sm">No follow-ups due in the next 10 days</p>
+                        </div>
+                    ) : (
+                        <div className="min-w-[860px]">
+                            {/* ── Column Headers (with inline filters) ── */}
+                            <div className="grid items-center border-b border-border/70 bg-muted/30"
+                                style={{ gridTemplateColumns: '120px 1fr 130px 1fr 180px 200px' }}>
+
+                                {/* PO ID header */}
+                                <div className="px-4 py-2.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                                    PO ID
+                                </div>
+
+                                {/* PROJECT header with filter */}
+                                <div className="px-4 py-2.5">
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <button className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground uppercase tracking-widest hover:text-foreground transition-colors group">
+                                                PROJECT
+                                                <ChevronDown className="h-3 w-3 opacity-60 group-hover:opacity-100" />
+                                                {followupProjectId !== "all" && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-orange-400" />}
+                                            </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="start" className="w-48">
+                                            <DropdownMenuItem onClick={() => { setFollowupProjectId("all"); setFollowupPage(1); }}
+                                                className={cn(followupProjectId === "all" && "bg-accent")}>
+                                                All Projects
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            {projects?.map(p => (
+                                                <DropdownMenuItem key={p._id}
+                                                    onClick={() => { setFollowupProjectId(p._id); setFollowupPage(1); }}
+                                                    className={cn(followupProjectId === p._id && "bg-accent")}>
+                                                    {p.name}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+
+                                {/* DATES header with filter */}
+                                <div className="px-4 py-2.5">
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <button className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground uppercase tracking-widest hover:text-foreground transition-colors group">
+                                                DATES
+                                                <ChevronDown className="h-3 w-3 opacity-60 group-hover:opacity-100" />
+                                                {followupDate && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-orange-400" />}
+                                            </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="start" className="w-56 p-3">
+                                            <p className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Filter by Due Date</p>
+                                            <InlineDateFilter
+                                                value={followupDate}
+                                                onChange={d => { setFollowupDate(d); setFollowupPage(1); }}
+                                                label="Pick due date"
+                                            />
+                                            {followupDate && (
+                                                <button onClick={() => { setFollowupDate(null); setFollowupPage(1); }}
+                                                    className="mt-2 text-[11px] text-red-400 hover:text-red-500 flex items-center gap-1">
+                                                    <X className="h-3 w-3" /> Clear filter
+                                                </button>
+                                            )}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+
+                                {/* ITEM DETAILS header */}
+                                <div className="px-4 py-2.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">ITEM DETAILS</div>
+
+                                {/* FOLLOW-UP LOG header */}
+                                <div className="px-4 py-2.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">FOLLOW-UP LOG</div>
+
+                                {/* ACTIONS header */}
+                                <div className="px-4 py-2.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">ACTIONS</div>
+                            </div>
+
+                            {/* ── Rows ── */}
+                            <div className="divide-y divide-border/40">
+                                {(() => {
+                                    // Apply search filter on top of group filter
+                                    const searchLower = followupSearch.toLowerCase();
+                                    const filtered = searchLower
+                                        ? followupGroups.filter(g =>
+                                            (g.poNumber || "").toLowerCase().includes(searchLower) ||
+                                            (g.requestNumber || "").toLowerCase().includes(searchLower) ||
+                                            (g.firstItem.itemName || "").toLowerCase().includes(searchLower) ||
+                                            (g.firstItem.description || "").toLowerCase().includes(searchLower)
+                                        )
+                                        : followupGroups;
+
+                                    const pageItems = filtered.slice((followupPage - 1) * 5, followupPage * 5);
+                                    const totalPages = Math.ceil(filtered.length / 5);
+
+                                    return (
+                                        <>
+                                            {pageItems.length === 0 ? (
+                                                <div className="py-10 text-center text-sm text-muted-foreground">No results match your search.</div>
+                                            ) : pageItems.map((g) => {
+                                                const vendor = vendorsQuery?.find(v => v._id === g.firstItem.selectedVendorId);
+                                                const proj = projects?.find(p => p._id === g.firstItem.projectId);
+                                                const totalQty = g.items.reduce((acc: number, curr: any) => acc + (curr.quantity || 0), 0);
+                                                const unit = g.firstItem.unit || "nos";
+                                                const daysLeft = g.firstItem.requiredBy
+                                                    ? Math.ceil((g.firstItem.requiredBy - Date.now()) / 86400000)
+                                                    : null;
+                                                const isUrgent = daysLeft !== null && daysLeft <= 3;
+                                                const isWarning = daysLeft !== null && daysLeft > 3 && daysLeft <= 7;
+                                                const customDayInput = reminderDayInputs[g.key] ?? "";
+
+                                                return (
+                                                    <div
+                                                        key={g.key}
+                                                        className={cn(
+                                                            "grid items-start transition-colors",
+                                                            isUrgent ? "bg-red-500/5 hover:bg-red-500/8" : "hover:bg-muted/20"
+                                                        )}
+                                                        style={{ gridTemplateColumns: '120px 1fr 130px 1fr 180px 200px' }}
+                                                    >
+                                                        {/* PO ID */}
+                                                        <div className="px-4 py-3.5 flex flex-col gap-1">
+                                                            <span className="text-xs font-bold font-mono text-primary/90">
+                                                                {g.poNumber || g.requestNumber || "—"}
+                                                            </span>
+                                                            {isUrgent && (
+                                                                <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider">Urgent</span>
+                                                            )}
+                                                            {isWarning && !isUrgent && (
+                                                                <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider">{daysLeft}d left</span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* PROJECT */}
+                                                        <div className="px-4 py-3.5 flex flex-col gap-0.5 min-w-0">
+                                                            <span className="text-xs font-semibold truncate">{proj?.name || "No Project"}</span>
+                                                            <span className="text-[11px] text-muted-foreground truncate">{vendor?.companyName || "Unknown Vendor"}</span>
+                                                        </div>
+
+                                                        {/* DATES */}
+                                                        <div className="px-4 py-3.5 flex flex-col gap-2">
+                                                            <div>
+                                                                <div className="text-[9px] font-semibold text-muted-foreground uppercase leading-none mb-0.5">REQUIRED</div>
+                                                                <div className={cn(
+                                                                    "text-xs font-bold",
+                                                                    daysLeft !== null && daysLeft < 0 ? "text-red-400" :
+                                                                    isUrgent ? "text-red-400" :
+                                                                    isWarning ? "text-amber-400" : "text-foreground"
+                                                                )}>
+                                                                    {g.firstItem.requiredBy ? format(g.firstItem.requiredBy, "dd MMM") : "—"}
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[9px] font-semibold text-muted-foreground uppercase leading-none mb-0.5">CREATED</div>
+                                                                <div className="text-[11px] text-muted-foreground">
+                                                                    {format(g.firstItem.createdAt, "dd/MM")}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* ITEM DETAILS — no image, QTY beside item name */}
+                                                        <div className="px-4 py-3.5 flex flex-col gap-1 min-w-0">
+                                                            {g.items.map((item: any, idx: number) => (
+                                                                <div key={idx} className="flex items-baseline gap-2 min-w-0">
+                                                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 shrink-0">#{idx + 1}</Badge>
+                                                                    <span className="text-xs font-semibold truncate">{item.itemName}</span>
+                                                                    <span className="text-[11px] font-bold text-primary/80 shrink-0">{item.quantity} {item.unit || "nos"}</span>
+                                                                </div>
+                                                            ))}
+                                                            {g.firstItem.description && (
+                                                                <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2 mt-0.5">{g.firstItem.description}</p>
+                                                            )}
+                                                        </div>
+
+                                                        {/* FOLLOW-UP LOG */}
+                                                        <div className="px-4 py-3.5">
+                                                            <EditableTalk
+                                                                dateValue={g.firstItem.lastTalkDate}
+                                                                textValue={g.firstItem.lastTalkText}
+                                                                onDateChange={ts => updateLastTalkDate({ requestId: g.firstItem._id, lastTalkDate: ts })}
+                                                                onTextChange={txt => updateLastTalkText({ requestId: g.firstItem._id, lastTalkText: txt })}
+                                                            />
+                                                        </div>
+
+                                                        {/* ACTIONS */}
+                                                        <div className="px-4 py-3.5 flex flex-col items-end gap-2">
+                                                            {/* Remind: dropdown + custom days input */}
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button variant="outline" size="sm"
+                                                                        className="h-7 text-[11px] px-2.5 gap-1.5 w-full border-border/60 hover:border-orange-400/50 hover:text-orange-400">
+                                                                        <BellRing className="h-3 w-3" />
+                                                                        Remind
+                                                                        <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent align="end" className="w-52 p-2">
+                                                                    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 px-1">Snooze for</div>
+                                                                    {[1, 3, 7].map(days => (
+                                                                        <DropdownMenuItem key={days}
+                                                                            onClick={() => updateLastTalkDate({ requestId: g.firstItem._id, lastTalkDate: addDays(new Date(), days).getTime() }).then(() => toast.success(`Remind in ${days} day${days > 1 ? 's' : ''}`))}
+                                                                            className="text-xs">
+                                                                            {days === 1 ? "Tomorrow" : days === 3 ? "In 3 days" : "In 1 week"}
+                                                                        </DropdownMenuItem>
+                                                                    ))}
+                                                                    <DropdownMenuSeparator />
+                                                                    {/* Custom days */}
+                                                                    <div className="px-1 pt-1 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                                                        <Input
+                                                                            type="number"
+                                                                            min="1"
+                                                                            max="365"
+                                                                            placeholder="Days"
+                                                                            value={customDayInput}
+                                                                            onChange={e => setReminderDayInputs(prev => ({ ...prev, [g.key]: e.target.value }))}
+                                                                            className="h-7 text-xs w-16 px-2"
+                                                                        />
+                                                                        <Button size="sm" className="h-7 text-[11px] px-2.5 flex-1"
+                                                                            disabled={!customDayInput || isNaN(parseInt(customDayInput)) || parseInt(customDayInput) < 1}
+                                                                            onClick={() => {
+                                                                                const d = parseInt(customDayInput);
+                                                                                if (d > 0) {
+                                                                                    updateLastTalkDate({ requestId: g.firstItem._id, lastTalkDate: addDays(new Date(), d).getTime() })
+                                                                                        .then(() => {
+                                                                                            toast.success(`Remind in ${d} day${d > 1 ? 's' : ''}`);
+                                                                                            setReminderDayInputs(prev => ({ ...prev, [g.key]: "" }));
+                                                                                        });
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            Set
+                                                                        </Button>
+                                                                    </div>
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+
+                                                            {/* View PO — opens PDF popup */}
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="h-7 text-[11px] px-2.5 gap-1.5 w-full border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400"
+                                                                onClick={() => {
+                                                                    if (g.poNumber) {
+                                                                        setPdfPreviewPO({ poNumber: g.poNumber, requestId: g.firstItem._id });
+                                                                    } else {
+                                                                        toast.info("No PO number assigned yet");
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <Eye className="h-3 w-3" /> View PO
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {/* Pagination */}
+                                            {totalPages > 1 && (
+                                                <div className="flex items-center justify-between px-5 py-3 border-t border-border/40 bg-muted/10">
+                                                    <span className="text-[11px] text-muted-foreground">
+                                                        Page {followupPage} of {totalPages} &nbsp;·&nbsp; {filtered.length} POs
+                                                    </span>
+                                                    <div className="flex gap-1">
+                                                        <Button variant="outline" size="sm" className="h-7 text-[11px] px-3"
+                                                            disabled={followupPage === 1}
+                                                            onClick={() => setFollowupPage(p => Math.max(1, p - 1))}>← Prev</Button>
+                                                        <Button variant="outline" size="sm" className="h-7 text-[11px] px-3"
+                                                            disabled={followupPage >= totalPages}
+                                                            onClick={() => setFollowupPage(p => Math.min(totalPages, p + 1))}>Next →</Button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* PO PDF Preview Dialog */}
+            {pdfPreviewPO && (
+                <PDFPreviewDialog
+                    open={!!pdfPreviewPO}
+                    onOpenChange={open => { if (!open) setPdfPreviewPO(null); }}
+                    poNumber={pdfPreviewPO.poNumber}
+                    requestId={pdfPreviewPO.requestId}
+                    type="po"
+                />
+            )}
 
             {/* ═══════════════════════════════════════════════
                 SECTION 4: ACTIVITY LOGS
@@ -566,28 +979,45 @@ export function PurchaseDashboardGraphs() {
                             <p className="text-sm">No activities recorded for this date</p>
                         </div>
                     ) : (
-                        <div className="space-y-1 rounded-lg border border-border overflow-hidden">
-                            {activityLogs.map((log, idx) => (
-                                <div
-                                    key={log._id}
-                                    className={cn(
-                                        "flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors",
-                                        idx !== activityLogs.length - 1 && "border-b border-border/50"
-                                    )}
-                                >
-                                    <div className="flex items-center gap-1.5 text-muted-foreground shrink-0 mt-0.5">
-                                        <Clock className="h-3 w-3" />
-                                        <span className="text-xs font-mono w-[75px]">{log.time}</span>
+                        <>
+                            <div className="rounded-lg border border-border overflow-hidden">
+                                {activityLogs.slice((activityPage - 1) * 5, activityPage * 5).map((log, idx) => (
+                                    <div
+                                        key={log._id}
+                                        className={cn(
+                                            "flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors",
+                                            idx > 0 && "border-t border-border/50"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-1.5 text-muted-foreground shrink-0 mt-0.5">
+                                            <Clock className="h-3 w-3" />
+                                            <span className="text-xs font-mono w-[75px]">{log.time}</span>
+                                        </div>
+                                        <p className="text-sm leading-relaxed flex-1">{log.action}</p>
+                                        {log.requestNumber && (
+                                            <Badge variant="secondary" className="text-[10px] shrink-0">
+                                                {log.requestNumber}
+                                            </Badge>
+                                        )}
                                     </div>
-                                    <p className="text-sm leading-relaxed flex-1">{log.action}</p>
-                                    {log.requestNumber && (
-                                        <Badge variant="secondary" className="text-[10px] shrink-0">
-                                            {log.requestNumber}
-                                        </Badge>
-                                    )}
+                                ))}
+                            </div>
+                            {activityLogs.length > 5 && (
+                                <div className="flex items-center justify-between pt-3">
+                                    <span className="text-[11px] text-muted-foreground">
+                                        Showing {Math.min((activityPage - 1) * 5 + 1, activityLogs.length)}–{Math.min(activityPage * 5, activityLogs.length)} of {activityLogs.length}
+                                    </span>
+                                    <div className="flex gap-1">
+                                        <Button variant="outline" size="sm" className="h-7 text-[11px] px-3"
+                                            disabled={activityPage === 1}
+                                            onClick={() => setActivityPage(p => Math.max(1, p - 1))}>← Prev</Button>
+                                        <Button variant="outline" size="sm" className="h-7 text-[11px] px-3"
+                                            disabled={activityPage * 5 >= activityLogs.length}
+                                            onClick={() => setActivityPage(p => p + 1)}>Next →</Button>
+                                    </div>
                                 </div>
-                            ))}
-                        </div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>
