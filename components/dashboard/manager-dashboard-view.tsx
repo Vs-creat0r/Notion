@@ -1,39 +1,58 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { motion } from "framer-motion";
 import {
-    BarChart,
-    Bar,
+    AreaChart,
+    Area,
     XAxis,
     YAxis,
     CartesianGrid,
     Tooltip,
-    ResponsiveContainer,
-    PieChart,
-    Pie,
-    Cell,
-    AreaChart,
-    Area
+    ResponsiveContainer
 } from "recharts";
 import {
-    TrendingUp,
+    Clock,
     Users,
     Package,
     AlertCircle,
     CheckCircle2,
-    Clock,
-    FileText,
     Activity,
-    Settings,
-    ArrowUpRight,
-    ArrowDownRight
+    TrendingUp,
+    PenLine,
+    PackageCheck,
+    Search,
+    X,
+    ChevronDown,
+    ChevronRight,
+    Calendar as CalendarIcon,
+    FolderKanban,
+    ListChecks,
+    MessageSquare,
+    Check,
+    Eye
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import { format, isSameDay, startOfDay } from "date-fns";
+import { cn } from "@/lib/utils";
+import { useChatWidth } from "@/components/chat/chat-width-provider";
+import { EditableTalk } from "@/components/purchase/editable-talk";
+import { PDFPreviewDialog } from "@/components/purchase/pdf-preview-dialog";
 
 // Animation Variants
 const container = {
@@ -51,65 +70,472 @@ const item = {
     show: { y: 0, opacity: 1 }
 };
 
-export function ManagerDashboardView() {
-    const statsQuery = useQuery(api.dashboard.getManagerDashboardStats);
+/* ── helpers ─────────────────────────────────────────── */
+function fmtDate(ts: number | undefined | null): string {
+    if (!ts) return "—";
+    return format(new Date(ts), "dd MMM yy");
+}
 
-    // DEMO DATA GENERATOR
-    // If real data is empty or user wants a demo, we use this rich structure
-    const demoStats = {
-        overview: {
-            totalRequests: 1248,
-            pendingRequests: 14,
-            approvedRequests: 1156,
-            rejectedRequests: 78,
-            totalUsers: 24,
-            totalInventoryItems: 342,
-            lowStockItems: 12,
-        },
-        charts: {
-            sitePerformance: [
-                { name: "Ahmedabad", requests: 450 },
-                { name: "Surat", requests: 320 },
-                { name: "Rajkot", requests: 210 },
-                { name: "Vadodara", requests: 180 },
-                { name: "Gandhinagar", requests: 88 },
-            ],
-            statusDistribution: [
-                { name: "Approved", value: 1156, color: "#10b981" },
-                { name: "Pending", value: 14, color: "#f59e0b" },
-                { name: "Rejected", value: 78, color: "#ef4444" },
-                { name: "Processing", value: 45, color: "#3b82f6" }
-            ],
-            spendingTrends: [
-                { name: 'Jan', value: 4000 },
-                { name: 'Feb', value: 3000 },
-                { name: 'Mar', value: 2000 },
-                { name: 'Apr', value: 2780 },
-                { name: 'May', value: 1890 },
-                { name: 'Jun', value: 2390 },
-                { name: 'Jul', value: 3490 },
-            ]
-        },
-        recentActivity: [
-            { _id: "1", itemName: "High Grade Cement - UltraTech", creatorName: "Rajesh Kumar", status: "pending", quantity: 500, createdAt: Date.now(), creatorImage: "" },
-            { _id: "2", itemName: "Steel Rebar 12mm", creatorName: "Amit Patel", status: "approved", quantity: 250, createdAt: Date.now() - 86400000, creatorImage: "" },
-            { _id: "3", itemName: "Safety Helmets (Yellow)", creatorName: "Sneha Singh", status: "delivered", quantity: 50, createdAt: Date.now() - 172800000, creatorImage: "" },
-            { _id: "4", itemName: "PVC Pipes 4 inch", creatorName: "Vikram Malhotra", status: "rejected", quantity: 100, createdAt: Date.now() - 259200000, creatorImage: "" },
-            { _id: "5", itemName: "Electrical Wiring Bundle", creatorName: "Priya Sharma", status: "approved", quantity: 20, createdAt: Date.now() - 345600000, creatorImage: "" },
-        ],
-        team: [
-            { name: "Rajesh Kumar", role: "Site Engineer", image: "https://i.pravatar.cc/150?u=1" },
-            { name: "Amit Patel", role: "Site Manager", image: "https://i.pravatar.cc/150?u=2" },
-            { name: "Sneha Singh", role: "Purchase Officer", image: "https://i.pravatar.cc/150?u=3" },
-            { name: "Vikram M.", role: "Supervisor", image: "https://i.pravatar.cc/150?u=4" },
-        ]
+/* ── Inline Date Picker (simple native input) ────────── */
+function InlineDateFilter({
+    value,
+    onChange,
+    label,
+}: {
+    value: Date | null;
+    onChange: (d: Date | null) => void;
+    label?: string;
+}) {
+    const dateStr = value ? format(value, "yyyy-MM-dd") : "";
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const handleClick = (e: React.MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-clear-btn]')) return;
+
+        try {
+            inputRef.current?.showPicker();
+        } catch {
+            inputRef.current?.focus();
+            inputRef.current?.click();
+        }
     };
 
-    // Use query data if available and has substance, otherwise fallback to demo for visual impressiveness
-    const hasRealData = statsQuery && statsQuery.overview.totalRequests > 5;
-    const stats: any = hasRealData ? { ...statsQuery, charts: { ...statsQuery.charts, spendingTrends: demoStats.charts.spendingTrends }, team: demoStats.team } : demoStats;
+    return (
+        <div
+            className="group relative inline-flex items-center gap-1.5 cursor-pointer select-none px-3 py-1.5 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50"
+            onClick={handleClick}
+        >
+            <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            {label && (
+                <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors">
+                    {label}
+                </span>
+            )}
+            <span
+                className={cn(
+                    "text-xs font-medium transition-colors group-hover:text-primary",
+                    value ? "text-foreground" : "text-muted-foreground italic"
+                )}
+            >
+                {value ? format(value, "dd MMM") : "Pick date"}
+            </span>
+            <input
+                ref={inputRef}
+                type="date"
+                value={dateStr}
+                onChange={(e) => {
+                    if (e.target.value) {
+                        onChange(new Date(e.target.value + "T00:00:00"));
+                    } else {
+                        onChange(null);
+                    }
+                }}
+                className="absolute inset-0 opacity-0 pointer-events-none w-0 h-0"
+                tabIndex={-1}
+            />
+            {value && (
+                <button
+                    type="button"
+                    data-clear-btn
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onChange(null);
+                    }}
+                    className="text-muted-foreground hover:text-red-500 rounded p-0.5 z-10 relative"
+                    title="Clear date"
+                >
+                    <X className="h-3 w-3" />
+                </button>
+            )}
+        </div>
+    );
+}
 
-    if (!statsQuery && !hasRealData) { // Show loading only initially
+/* ── Progress Ring for Pending Analytics ─────────────── */
+function ProgressRing({
+    percentage,
+    label,
+    sublabel,
+    colorClass,
+}: {
+    percentage: number;
+    label: string;
+    sublabel: string;
+    colorClass: string;
+}) {
+    const radius = 36;
+    const strokeWidth = 6;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
+    return (
+        <div className="flex flex-col items-center justify-center p-4 bg-card/60 backdrop-blur-md rounded-xl border border-border/50 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+            <div className="relative w-20 h-20 flex items-center justify-center">
+                <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                        cx="40"
+                        cy="40"
+                        r={radius}
+                        className="text-muted/10 stroke-current"
+                        strokeWidth={strokeWidth}
+                        fill="transparent"
+                    />
+                    <circle
+                        cx="40"
+                        cy="40"
+                        r={radius}
+                        className={cn("stroke-current transition-all duration-500 ease-in-out", colorClass)}
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                    />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="text-base font-extrabold tracking-tight">{percentage}%</span>
+                    <span className="text-[8px] uppercase tracking-wider text-muted-foreground font-bold">Pending</span>
+                </div>
+            </div>
+            <div className="text-center mt-3.5">
+                <h4 className="text-xs font-bold text-foreground truncate max-w-[120px]">{label}</h4>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{sublabel}</p>
+            </div>
+        </div>
+    );
+}
+
+export function ManagerDashboardView() {
+    const router = useRouter();
+
+    // Global Sidebar/Tasks State
+    const { isStickyNotesOpen, setIsStickyNotesOpen } = useChatWidth();
+
+    // ── Global Filters ──
+    const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
+    const [globalDate, setGlobalDate] = useState<Date | null>(null);
+
+    // ── Section 2: User Activity Filters ──
+    const [selectedUserId, setSelectedUserId] = useState<string>("all");
+    const [userActivityDate, setUserActivityDate] = useState<Date | null>(null);
+
+    // ── Section 3: Followups Filters ──
+    const [followupSearch, setFollowupSearch] = useState("");
+    const [followupFilterStatus, setFollowupFilterStatus] = useState<"all" | "taken" | "pending">("all");
+ 
+    // ── PDF Preview States ──
+    const [pdfPreviewPoNumber, setPdfPreviewPoNumber] = useState<string | null>(null);
+    const [pdfPreviewRequestId, setPdfPreviewRequestId] = useState<string | null>(null);
+ 
+    // ── Data Queries ──
+    const projects = useQuery(api.projects.getAllProjects, {});
+    const requestsQuery = useQuery(api.requests.getAllRequests, {});
+    const purchaseOrdersQuery = useQuery(api.purchaseOrders.getAllPurchaseOrders, {});
+    const deliveriesQuery = useQuery(api.deliveries.getAllDeliveries, {});
+    const vendorsQuery = useQuery(api.vendors.getAllVendors, {});
+    const allUsers = useQuery(api.users.getAllUsers, {}) || [];
+    const stickyNotesQuery = useQuery(api.stickyNotes.list, { includeCompleted: true });
+
+    // ── Mutations ──
+    const updateLastTalkDate = useMutation(api.requests.updateLastTalkDate);
+    const updateLastTalkText = useMutation(api.requests.updateLastTalkText);
+    const completeTask = useMutation(api.stickyNotes.complete);
+
+    // Data Load State
+    const isLoading = requestsQuery === undefined || purchaseOrdersQuery === undefined || deliveriesQuery === undefined;
+    const requests = requestsQuery || [];
+    const purchaseOrders = purchaseOrdersQuery || [];
+    const deliveries = deliveriesQuery || [];
+
+    // Filter workers (SEs and POs) for select dropdown
+    const workers = useMemo(() => {
+        return allUsers.filter(u => u.role !== "manager" && u.isActive);
+    }, [allUsers]);
+
+    // Effective Date for User Section
+    const effectiveUserDate = userActivityDate || globalDate;
+
+    // Selected worker details
+    const selectedUser = useMemo(() => {
+        return workers.find(w => w._id === selectedUserId);
+    }, [workers, selectedUserId]);
+
+    // ============================================================================
+    // SECTION 1: Process States Computation
+    // ============================================================================
+    const processStates = useMemo(() => {
+        let reqs = requests;
+        let pos = purchaseOrders;
+        let dcs = deliveries;
+
+        // Filter by Project
+        if (selectedProjectId !== "all") {
+            reqs = reqs.filter(r => r.projectId === selectedProjectId);
+            pos = pos.filter(p => p.projectId === selectedProjectId);
+            dcs = dcs.filter(d => {
+                if (d.poId) {
+                    const po = purchaseOrders.find(p => p._id === d.poId);
+                    return po?.projectId === selectedProjectId;
+                }
+                return true;
+            });
+        }
+
+        // Filter by Date
+        if (globalDate) {
+            reqs = reqs.filter(r => isSameDay(new Date(r.createdAt), globalDate));
+            pos = pos.filter(p => isSameDay(new Date(p.createdAt), globalDate));
+            dcs = dcs.filter(d => isSameDay(new Date(d.createdAt), globalDate));
+        }
+
+        const ccPending = reqs.filter(r => r.status === "cc_pending").length;
+        const poSignPending = reqs.filter(r => r.status === "sign_pending").length;
+        const activeDCs = dcs.filter(d => d.status === "pending").length;
+
+        return { ccPending, poSignPending, activeDCs };
+    }, [requests, purchaseOrders, deliveries, selectedProjectId, globalDate]);
+
+    const processCards = [
+        {
+            title: "CC Pending Approval",
+            value: processStates.ccPending,
+            subtitle: "Cost Comparisons awaiting manager review",
+            icon: Clock,
+            borderColor: "border-l-amber-500",
+            bgTint: "bg-amber-500/5",
+            iconColor: "text-amber-500",
+            href: "/dashboard/manager/requests?status=cc_pending&work_filter=all",
+        },
+        {
+            title: "PO Sign Pending",
+            value: processStates.poSignPending,
+            subtitle: "Purchase Orders waiting manager signature",
+            icon: PenLine,
+            borderColor: "border-l-blue-500",
+            bgTint: "bg-blue-500/5",
+            iconColor: "text-blue-500",
+            href: "/dashboard/manager/requests?status=sign_pending&work_filter=all",
+        },
+        {
+            title: "Active Challans",
+            value: processStates.activeDCs,
+            subtitle: "Delivery Challans currently in dispatch",
+            icon: PackageCheck,
+            borderColor: "border-l-indigo-500",
+            bgTint: "bg-indigo-500/5",
+            iconColor: "text-indigo-500",
+            href: "/dashboard/manager/requests?status=out_for_delivery,ready_for_delivery,delivery_processing,delivery_stage&work_filter=all",
+        },
+    ];
+
+    // ============================================================================
+    // SECTION 2: User Activity & Analytics Section
+    // ============================================================================
+    const userAnalytics = useMemo(() => {
+        const isPO = selectedUser ? selectedUser.role === "purchase_officer" : false;
+
+        // CCs list:
+        const ccs = requests.filter(r => {
+            const matchesUser = selectedUserId === "all" ? true : (isPO ? true : r.createdBy === selectedUserId);
+            const matchesDate = !effectiveUserDate || isSameDay(new Date(r.createdAt), effectiveUserDate);
+            const matchesProject = selectedProjectId === "all" || r.projectId === selectedProjectId;
+            return matchesUser && matchesDate && matchesProject && ["ready_for_cc", "cc_pending", "cc_approved", "cc_rejected", "ready_for_po"].includes(r.status);
+        });
+
+        // POs list:
+        const pos = purchaseOrders.filter(po => {
+            const matchesUser = selectedUserId === "all"
+                ? true
+                : (isPO 
+                    ? po.createdBy === selectedUserId 
+                    : requests.some(r => r._id === po.requestId && r.createdBy === selectedUserId));
+            const matchesDate = !effectiveUserDate || isSameDay(new Date(po.createdAt), effectiveUserDate);
+            const matchesProject = selectedProjectId === "all" || po.projectId === selectedProjectId;
+            return matchesUser && matchesDate && matchesProject;
+        });
+
+        // DCs list:
+        const dcs = deliveries.filter(dc => {
+            const matchesUser = selectedUserId === "all"
+                ? true
+                : (isPO ? dc.createdBy === selectedUserId : false);
+            const matchesDate = !effectiveUserDate || isSameDay(new Date(dc.createdAt), effectiveUserDate);
+            let matchesProject = true;
+            if (selectedProjectId !== "all") {
+                matchesProject = false;
+                if (dc.poId) {
+                    const po = purchaseOrders.find(p => p._id === dc.poId);
+                    if (po?.projectId === selectedProjectId) matchesProject = true;
+                }
+            }
+            return matchesUser && matchesDate && matchesProject;
+        });
+
+        const pendingCC = ccs.filter(r => ["ready_for_cc", "cc_pending"].includes(r.status)).length;
+        const pendingPO = pos.filter(po => ["pending_approval", "sign_pending"].includes(po.status)).length;
+        const pendingDC = dcs.filter(dc => dc.status === "pending").length;
+
+        const ccPct = ccs.length > 0 ? Math.round((pendingCC / ccs.length) * 100) : 0;
+        const poPct = pos.length > 0 ? Math.round((pendingPO / pos.length) * 100) : 0;
+        const dcPct = dcs.length > 0 ? Math.round((pendingDC / dcs.length) * 100) : 0;
+
+        return {
+            ccPct,
+            poPct,
+            dcPct,
+            totalCC: ccs.length,
+            totalPO: pos.length,
+            totalDC: dcs.length
+        };
+    }, [requests, purchaseOrders, deliveries, selectedUserId, selectedUser, effectiveUserDate, selectedProjectId]);
+
+    // Tasks checklist breakdown for selected user
+    const userTasks = useMemo(() => {
+        if (!stickyNotesQuery || !selectedUserId) return [];
+        return stickyNotesQuery.filter(task => 
+            !task.isDeleted &&
+            (selectedUserId === "all" ? true : task.assignedTo === selectedUserId) &&
+            (!effectiveUserDate || isSameDay(new Date(task.dueDate || task.createdAt), effectiveUserDate))
+        );
+    }, [stickyNotesQuery, selectedUserId, effectiveUserDate]);
+
+    // Handle task completion toggle
+    const handleToggleTask = async (taskId: Id<"stickyNotes">, currentStatus: boolean) => {
+        try {
+            await completeTask({ noteId: taskId, isCompleted: !currentStatus });
+            toast.success(`Task marked as ${!currentStatus ? 'completed' : 'incomplete'}`);
+        } catch {
+            toast.error("Failed to update task status");
+        }
+    };
+
+    // ============================================================================
+    // SECTION 3: Vendor Follow-ups
+    // ============================================================================
+    const followupGroups = useMemo(() => {
+        let baseReqs = requests || [];
+        if (selectedProjectId !== "all") {
+            baseReqs = baseReqs.filter(r => r.projectId === selectedProjectId);
+        }
+
+        // Only show requests in pending_po or sign_pending
+        let pendingReqs = baseReqs.filter(r => r.status === "pending_po" || r.status === "sign_pending");
+
+        // Group by PO number / request number
+        const map = new Map<string, any[]>();
+        pendingReqs.forEach((r) => {
+            const key = r.poNumber ?? r.requestNumber;
+            const arr = map.get(key) || [];
+            arr.push(r);
+            map.set(key, arr);
+        });
+
+        let groups = Array.from(map.entries()).map(([key, items]) => {
+            const firstItem = items[0];
+            let totalAmount = 0;
+            items.forEach((item: any) => {
+                const quote = item.vendorQuotes?.find((q: any) => q.vendorId === item.selectedVendorId);
+                if (quote && quote.amount) totalAmount += quote.amount;
+                else if (item.quantity && quote?.unitPrice) totalAmount += item.quantity * quote.unitPrice;
+            });
+            if (totalAmount === 0 && firstItem.poNumber) {
+                const pos = purchaseOrders.filter((p: any) => p.poNumber === firstItem.poNumber);
+                totalAmount = pos.reduce((s: number, p: any) => s + (p.totalAmount || 0), 0);
+            }
+            return { key, items, firstItem, totalAmount, poNumber: firstItem.poNumber, requestNumber: firstItem.requestNumber };
+        });
+
+        // Filter by selected user: PO created by PO, or requests created by SE
+        if (selectedUserId !== "all" && selectedUser) {
+            const isPO = selectedUser.role === "purchase_officer";
+            groups = groups.filter(g => {
+                if (isPO) {
+                    const po = purchaseOrders.find(p => p.poNumber === g.poNumber);
+                    return po?.createdBy === selectedUserId;
+                } else {
+                    return g.firstItem.createdBy === selectedUserId;
+                }
+            });
+        }
+
+        // Apply Followup Status Segment filter
+        if (followupFilterStatus === "taken") {
+            groups = groups.filter(g => (g.firstItem as any).lastTalkDate);
+        } else if (followupFilterStatus === "pending") {
+            groups = groups.filter(g => !(g.firstItem as any).lastTalkDate);
+        }
+
+        // Apply search query
+        if (followupSearch.trim()) {
+            const query = followupSearch.toLowerCase().trim();
+            groups = groups.filter(g =>
+                (g.poNumber || "").toLowerCase().includes(query) ||
+                (g.requestNumber || "").toLowerCase().includes(query) ||
+                (g.firstItem.itemName || "").toLowerCase().includes(query)
+            );
+        }
+
+        return groups.sort((a, b) => {
+            const aDate = (a.firstItem as any).lastTalkDate ?? a.firstItem.requiredBy ?? a.firstItem.createdAt;
+            const bDate = (b.firstItem as any).lastTalkDate ?? b.firstItem.requiredBy ?? b.firstItem.createdAt;
+            return aDate - bDate;
+        });
+    }, [requests, purchaseOrders, selectedUserId, selectedUser, followupFilterStatus, followupSearch, selectedProjectId]);
+
+    // ============================================================================
+    // SECTION 4: Purchase Trend Analytics Computation
+    // ============================================================================
+    const chartData = useMemo(() => {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const monthlyVolume: Record<string, number> = {};
+
+        const currentMonth = new Date().getMonth();
+        for (let i = 0; i <= currentMonth; i++) {
+            monthlyVolume[months[i]] = 0;
+        }
+
+        // Aggregate real POs
+        purchaseOrders.forEach(po => {
+            if (selectedProjectId !== "all" && po.projectId !== selectedProjectId) return;
+            const date = new Date(po.createdAt);
+            if (date.getFullYear() === new Date().getFullYear()) {
+                const m = months[date.getMonth()];
+                if (monthlyVolume[m] !== undefined) {
+                    monthlyVolume[m] += po.totalAmount || 0;
+                }
+            }
+        });
+
+        const data = Object.entries(monthlyVolume).map(([name, value]) => ({
+            name,
+            value: Math.round(value),
+        }));
+
+        // Fallback demo data if no volume
+        const allZero = data.every(d => d.value === 0);
+        if (allZero) {
+            return [
+                { name: 'Jan', value: 45000 },
+                { name: 'Feb', value: 72000 },
+                { name: 'Mar', value: 98000 },
+                { name: 'Apr', value: 54000 },
+                { name: 'May', value: 81000 },
+                { name: 'Jun', value: 123000 },
+                { name: 'Jul', value: 149000 },
+                { name: 'Aug', value: 110000 },
+                { name: 'Sep', value: 95000 },
+                { name: 'Oct', value: 135000 },
+                { name: 'Nov', value: 160000 },
+                { name: 'Dec', value: 210000 },
+            ].slice(0, currentMonth + 1);
+        }
+
+        return data;
+    }, [purchaseOrders, selectedProjectId]);
+
+    if (isLoading) {
         return (
             <div className="flex h-[50vh] items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
@@ -120,407 +546,472 @@ export function ManagerDashboardView() {
         );
     }
 
-    const growth = {
-        requests: "+12.5%",
-        pending: "-5.2%",
-        inventory: "+2.4%",
-        users: "+8.1%"
-    };
-
-    const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-
     return (
         <motion.div
             variants={container}
             initial="hidden"
             animate="show"
-            className="space-y-8 pt-2 pb-10 relative"
+            className="space-y-6 pt-2 pb-10 relative"
         >
-            {/* Dynamic Background */}
-            <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
-                <div className="absolute inset-0 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] [mask-image:radial-gradient(ellipse_70%_70%_at_50%_10%,#000_40%,transparent_100%)] dark:bg-[radial-gradient(#1f2937_1px,transparent_1px)] opacity-40" />
-                <div className="absolute top-0 right-0 h-[500px] w-[500px] bg-primary/5 rounded-full blur-3xl opacity-50 mix-blend-multiply filter animate-blob" />
-                <div className="absolute top-0 left-0 h-[500px] w-[500px] bg-purple-500/5 rounded-full blur-3xl opacity-50 mix-blend-multiply filter animate-blob animation-delay-2000" />
-            </div>
+            {/* Header section with Global Filters */}
+            <div className="rounded-xl border border-border/50 bg-card/40 backdrop-blur-xl shadow-sm overflow-hidden p-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-3xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/75">
+                            Executive Overview
+                        </h1>
+                        <p className="text-muted-foreground mt-1 text-sm font-medium flex items-center gap-2">
+                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Manager Dashboard Operational Context
+                        </p>
+                    </div>
 
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-1">
-                <div>
-                    <h1 className="text-4xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-                        Executive Overview
-                    </h1>
-                    <p className="text-muted-foreground mt-2 text-sm font-medium flex items-center gap-2">
-                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        {currentDate} • System Operational
-                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/* Project selector */}
+                        <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                            <SelectTrigger className="h-9 w-[180px] text-xs bg-card border-border/60">
+                                <FolderKanban className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                                <SelectValue placeholder="All Projects" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Projects</SelectItem>
+                                {projects?.map((p) => (
+                                    <SelectItem key={p._id} value={p._id}>
+                                        {p.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+
+                        {/* Global Date selector */}
+                        <InlineDateFilter
+                            value={globalDate}
+                            onChange={setGlobalDate}
+                            label="Global Date:"
+                        />
+                    </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    {!hasRealData && <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100">Demo Mode Active</Badge>}
+            </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 1: PROCESS STATES
+            ═══════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/10">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary/10">
+                            <Activity className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold">Process States</h3>
+                            <p className="text-xs text-muted-foreground">Actionable managerial checkpoints</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            {/* KPI Cards - Glassmorphism */}
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                <KPICard title="Total Requests" value={stats.overview.totalRequests} icon={FileText} trend={growth.requests} trendUp={true} description="All time volume" color="blue" delay={0} />
-                <KPICard title="Pending Approval" value={stats.overview.pendingRequests} icon={Clock} trend={growth.pending} trendUp={false} description="Requires attention" color="amber" delay={0.1} />
-                <KPICard title="Inventory Alerts" value={stats.overview.lowStockItems} icon={AlertCircle} trend={growth.inventory} trendUp={false} description="Items Low on Stock" color="rose" delay={0.2} />
-                <KPICard title="Active Team" value={stats.overview.totalUsers} icon={Users} trend={growth.users} trendUp={true} description="On-site personnel" color="emerald" delay={0.3} />
-            </div>
-
-            {/* Quick Actions & System Status */}
-            <div className="grid gap-6 md:grid-cols-12">
-                <motion.div variants={item} className="md:col-span-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {['Create Request', 'Add User', 'Generate Report', 'System Settings'].map((action, i) => (
-                        <div key={i} className="flex flex-col items-center justify-center p-4 rounded-xl border bg-card/50 hover:bg-card/80 transition-all cursor-pointer hover:scale-105 group backdrop-blur-sm shadow-sm hover:shadow-md">
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-2 group-hover:bg-primary/20 transition-colors">
-                                {i === 0 ? <FileText className="h-5 w-5 text-primary" /> :
-                                    i === 1 ? <Users className="h-5 w-5 text-primary" /> :
-                                        i === 2 ? <TrendingUp className="h-5 w-5 text-primary" /> :
-                                            <Settings className="h-5 w-5 text-primary" />}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-border/40">
+                    {processCards.map((card) => (
+                        <div
+                            key={card.title}
+                            className={cn(
+                                "flex flex-col justify-between p-5 border-l-[3px] bg-card hover:bg-muted/15 transition-all group cursor-pointer",
+                                card.borderColor,
+                                card.bgTint
+                            )}
+                            onClick={() => router.push(card.href)}
+                        >
+                            <div className="flex items-start justify-between mb-3">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    {card.title}
+                                </p>
+                                <div
+                                    className={cn(
+                                        "flex items-center justify-center h-8 w-8 rounded-lg bg-background border border-border/40",
+                                        card.iconColor
+                                    )}
+                                >
+                                    <card.icon className="h-4 w-4" />
+                                </div>
                             </div>
-                            <span className="text-xs font-semibold text-muted-foreground group-hover:text-foreground">{action}</span>
+                            <div className="text-3xl font-extrabold tracking-tight mb-1">{card.value}</div>
+                            <div className="flex items-center justify-between mt-2">
+                                <p className="text-xs text-muted-foreground line-clamp-1">{card.subtitle}</p>
+                                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-primary flex items-center gap-0.5 shrink-0">
+                                    View <ChevronRight className="h-3 w-3" />
+                                </span>
+                            </div>
                         </div>
                     ))}
-                </motion.div>
-                <motion.div variants={item} className="md:col-span-4 rounded-xl border bg-card/50 p-6 flex flex-col justify-between backdrop-blur-sm shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Activity className="h-24 w-24" />
+                </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 2: USER ACTIVITY & ANALYTICS
+            ═══════════════════════════════════════════════ */}
+            <div className="grid gap-6 lg:grid-cols-12">
+                {/* Donut percentage rings */}
+                <div className="lg:col-span-5 rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col justify-between">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/10 gap-3">
+                        <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-primary" />
+                            <h3 className="text-sm font-semibold">User Activity & Analytics</h3>
+                        </div>
+                        <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                            <SelectTrigger className="h-8 w-[160px] text-xs bg-background border-border/60">
+                                <SelectValue placeholder="Select User" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Users</SelectItem>
+                                {workers.map(w => (
+                                    <SelectItem key={w._id} value={w._id}>
+                                        {w.fullName}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
-                    <div className="flex items-center gap-4 relative z-10">
-                        <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center ring-4 ring-emerald-500/5">
-                            <Activity className="h-6 w-6 text-emerald-500 animate-pulse" />
+ 
+                    <div className="p-5 flex-1 flex flex-col justify-center">
+                        <div className="grid grid-cols-3 gap-3">
+                            <ProgressRing
+                                percentage={userAnalytics.ccPct}
+                                label="CC Pipeline"
+                                sublabel={`${userAnalytics.totalCC} total items`}
+                                colorClass="text-amber-500"
+                            />
+                            <ProgressRing
+                                percentage={userAnalytics.poPct}
+                                label="PO Pipeline"
+                                sublabel={`${userAnalytics.totalPO} total orders`}
+                                colorClass="text-blue-500"
+                            />
+                            <ProgressRing
+                                percentage={userAnalytics.dcPct}
+                                label="DC Pipeline"
+                                sublabel={`${userAnalytics.totalDC} total dispatches`}
+                                colorClass="text-indigo-500"
+                            />
+                        </div>
+                    </div>
+                </div>
+ 
+                {/* User Task Breakdown Checklist */}
+                <div className="lg:col-span-7 rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col justify-between">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/10">
+                        <div className="flex items-center gap-2">
+                            <ListChecks className="h-4 w-4 text-primary" />
+                            <div>
+                                <h3 className="text-sm font-semibold">User Task Breakdown</h3>
+                                <p className="text-xs text-muted-foreground">Sticky Notes checklist for the chosen date</p>
+                            </div>
+                        </div>
+                        <InlineDateFilter
+                            value={userActivityDate}
+                            onChange={setUserActivityDate}
+                            label="Filter Date:"
+                        />
+                    </div>
+ 
+                    <div className="p-5 flex-1 overflow-y-auto max-h-[220px]">
+                        {userTasks.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground">
+                                <CheckCircle2 className="h-8 w-8 opacity-25" />
+                                <p className="text-xs">No tasks recorded for this date.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {userTasks.map((task) => {
+                                    const assignee = allUsers.find(u => u._id === task.assignedTo);
+                                    return (
+                                        <div
+                                            key={task._id}
+                                            className={cn(
+                                                "flex items-start justify-between p-3 rounded-lg border bg-background/50 hover:bg-background/80 transition-all",
+                                                task.isCompleted && "border-emerald-500/20 bg-emerald-500/[0.01]"
+                                            )}
+                                        >
+                                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                                                <button
+                                                    onClick={() => handleToggleTask(task._id, task.isCompleted)}
+                                                    className={cn(
+                                                        "mt-0.5 flex h-4.5 w-4.5 items-center justify-center rounded border border-muted-foreground/30 hover:border-primary transition-all",
+                                                        task.isCompleted && "bg-emerald-500 border-emerald-500 text-white"
+                                                    )}
+                                                >
+                                                    {task.isCompleted && <Check className="h-3 w-3" strokeWidth={3} />}
+                                                </button>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={cn(
+                                                        "text-xs font-semibold leading-none truncate",
+                                                        task.isCompleted && "line-through text-muted-foreground"
+                                                    )}>
+                                                        {task.title}
+                                                    </p>
+                                                    {task.content && (
+                                                        <p className={cn(
+                                                            "text-[10px] text-muted-foreground mt-1 line-clamp-1",
+                                                            task.isCompleted && "text-muted-foreground/60"
+                                                        )}>
+                                                            {task.content}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2 ml-3">
+                                                {selectedUserId === "all" && assignee && (
+                                                    <Badge variant="outline" className="text-[9px] font-medium text-slate-400 border-slate-500/20 bg-slate-500/5 py-0 px-1.5 shrink-0">
+                                                        {assignee.fullName}
+                                                    </Badge>
+                                                )}
+                                                {task.priority && (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={cn(
+                                                            "text-[9px] uppercase tracking-wider font-semibold py-0 px-1.5 shrink-0",
+                                                            task.priority === "high" && "text-red-500 border-red-500/20 bg-red-500/5",
+                                                            task.priority === "medium" && "text-amber-500 border-amber-500/20 bg-amber-500/5",
+                                                            task.priority === "low" && "text-blue-500 border-blue-500/20 bg-blue-500/5"
+                                                        )}
+                                                    >
+                                                        {task.priority}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 3: VENDOR FOLLOW-UPS
+            ═══════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/10 gap-3">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-orange-500/10">
+                            <MessageSquare className="h-4 w-4 text-orange-500" />
                         </div>
                         <div>
-                            <p className="text-sm font-bold">System Status</p>
-                            <p className="text-xs text-muted-foreground font-medium">Synced 2 mins ago</p>
+                            <h3 className="text-sm font-semibold">Vendor Follow-ups</h3>
+                            <p className="text-xs text-muted-foreground">PO communication updates for selected user</p>
                         </div>
                     </div>
-                    <div className="mt-4 flex items-center justify-between relative z-10">
-                        <div className="text-xs text-muted-foreground">Server Load</div>
-                        <Badge variant="outline" className="border-emerald-500/30 text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
-                            Operational
+ 
+                    <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                        {/* Dropdown status filter */}
+                        <Select 
+                            value={followupFilterStatus} 
+                            onValueChange={(val: any) => setFollowupFilterStatus(val)}
+                        >
+                            <SelectTrigger className="h-8 w-[140px] text-xs bg-background border-border/60">
+                                <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Follow-ups</SelectItem>
+                                <SelectItem value="taken">Taken</SelectItem>
+                                <SelectItem value="pending">Not Taken</SelectItem>
+                            </SelectContent>
+                        </Select>
+ 
+                        {/* Search followups */}
+                        <div className="relative w-full sm:w-48">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                            <Input
+                                value={followupSearch}
+                                onChange={e => setFollowupSearch(e.target.value)}
+                                placeholder="Search POs..."
+                                className="h-8 pl-8 text-xs bg-background border-border/60"
+                            />
+                        </div>
+                    </div>
+                </div>
+ 
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[860px] text-left border-collapse">
+                        <thead>
+                            <tr className="border-b border-border bg-muted/20 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                <th className="px-5 py-3">PO / Request ID</th>
+                                <th className="px-5 py-3">Project / Vendor</th>
+                                <th className="px-5 py-3">Required Date</th>
+                                <th className="px-5 py-3">Item Details</th>
+                                <th className="px-5 py-3 w-[260px]">Follow-up Notes / Talk Date</th>
+                                <th className="px-5 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/50">
+                            {followupGroups.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="py-8 text-center text-xs text-muted-foreground">
+                                        No pending follow-ups match filters.
+                                    </td>
+                                </tr>
+                            ) : (
+                                followupGroups.map((g) => {
+                                    const proj = projects?.find(p => p._id === g.firstItem.projectId);
+                                    const vendor = vendorsQuery?.find(v => v._id === g.firstItem.selectedVendorId);
+                                    const requiredDate = g.firstItem.requiredBy ? fmtDate(g.firstItem.requiredBy) : "—";
+                                    const daysLeft = g.firstItem.requiredBy
+                                        ? Math.ceil((g.firstItem.requiredBy - Date.now()) / 86400000)
+                                        : null;
+                                    const isUrgent = daysLeft !== null && daysLeft <= 3;
+                                    const isWarning = daysLeft !== null && daysLeft > 3 && daysLeft <= 7;
+                                    return (
+                                        <tr key={g.key} className="hover:bg-muted/10 transition-colors text-xs">
+                                            <td className="px-5 py-4 font-bold font-mono text-primary/90">
+                                                {g.poNumber || g.requestNumber || "—"}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <p className="font-semibold text-foreground">{proj?.name || "No Project"}</p>
+                                                <p className="text-[10px] text-muted-foreground">{vendor?.companyName || "Unknown Vendor"}</p>
+                                            </td>
+                                            <td className="px-5 py-4 font-medium">
+                                                <div>{requiredDate}</div>
+                                                {isUrgent && (
+                                                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider block mt-0.5">Urgent</span>
+                                                )}
+                                                {isWarning && !isUrgent && (
+                                                    <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider block mt-0.5">{daysLeft}d left</span>
+                                                )}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <div className="flex flex-col gap-1 max-w-[220px]">
+                                                    {g.items.map((item: any, idx: number) => (
+                                                        <div key={idx} className="flex items-center gap-1.5 text-[11px] truncate">
+                                                            <span className="font-semibold text-foreground">{item.itemName}</span>
+                                                            <span className="text-muted-foreground font-mono">({item.quantity} {item.unit || "nos"})</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <EditableTalk
+                                                    dateValue={(g.firstItem as any).lastTalkDate}
+                                                    textValue={(g.firstItem as any).lastTalkText}
+                                                    onDateChange={async (ts) => {
+                                                        try {
+                                                            // update last talk date for all requests in group
+                                                            await Promise.all(g.items.map(item => 
+                                                                updateLastTalkDate({ requestId: item._id, lastTalkDate: ts })
+                                                            ));
+                                                            toast.success("Follow-up date updated");
+                                                        } catch {
+                                                            toast.error("Failed to update follow-up date");
+                                                        }
+                                                    }}
+                                                    onTextChange={async (txt) => {
+                                                        try {
+                                                            // update last talk text for all requests in group
+                                                            await Promise.all(g.items.map(item => 
+                                                                updateLastTalkText({ requestId: item._id, lastTalkText: txt })
+                                                            ));
+                                                            toast.success("Follow-up notes updated");
+                                                        } catch {
+                                                            toast.error("Failed to update follow-up notes");
+                                                        }
+                                                    }}
+                                                />
+                                            </td>
+                                            <td className="px-5 py-4 text-right">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-7 text-[11px] px-2.5 gap-1.5 border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400"
+                                                    onClick={() => {
+                                                        if (g.poNumber) {
+                                                            setPdfPreviewPoNumber(g.poNumber);
+                                                            setPdfPreviewRequestId(g.firstItem._id);
+                                                        } else {
+                                                            toast.info("No PO number assigned yet");
+                                                        }
+                                                    }}
+                                                >
+                                                    <Eye className="h-3 w-3" /> View PO
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════════
+                SECTION 4: PURCHASE TREND AREA CHART
+            ═══════════════════════════════════════════════ */}
+            <div 
+                className="rounded-xl border border-border bg-card shadow-sm overflow-hidden cursor-pointer hover:border-primary/30 hover:shadow-md transition-all group"
+                onClick={() => router.push("/dashboard/manager/requests?show_pending_po=true")}
+            >
+                <CardHeader className="pb-2 border-b border-border/50 bg-muted/10 flex flex-row items-center justify-between space-y-0">
+                    <div>
+                        <CardTitle className="group-hover:text-primary transition-colors">Purchase Trend Analytics</CardTitle>
+                        <CardDescription>Volume of purchase orders approved by month</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">Click to view pending POs</span>
+                        <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary text-xs">
+                            Current Year
                         </Badge>
                     </div>
-                </motion.div>
-            </div>
-
-            {/* Main Interactive Charts Area */}
-            <div className="grid gap-6 md:grid-cols-12">
-                {/* Visual Spending Trend Area Chart */}
-                <motion.div variants={item} className="md:col-span-8 rounded-2xl border bg-card/40 backdrop-blur-xl text-card-foreground shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden">
-                    <CardHeader className="pb-2 border-b border-border/50">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle>Forecast & Trends</CardTitle>
-                                <CardDescription>Monthly procurement volume</CardDescription>
-                            </div>
-                            <select className="text-xs bg-background/50 border border-border rounded-md px-2 py-1 outline-none focus:ring-1 focus:ring-primary">
-                                <option>Last 6 Months</option>
-                                <option>Last Year</option>
-                            </select>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="pl-0 pr-4 pb-4 pt-6">
-                        <div className="h-[320px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={stats.charts.spendingTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.3} />
-                                    <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tick={{ dy: 10 }} />
-                                    <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value / 1000}k`} tick={{ dx: -10 }} />
-                                    <Tooltip
-                                        formatter={(value: any) => [`₹${value}`, 'Volume']}
-                                        contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: 'hsl(var(--popover)/0.9)', backdropFilter: 'blur(8px)', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                                    />
-                                    <Area type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </CardContent>
-                </motion.div>
-
-                {/* Status Donut Chart */}
-                <motion.div variants={item} className="md:col-span-4 rounded-2xl border bg-card/40 backdrop-blur-xl text-card-foreground shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col">
-                    <CardHeader className="pb-2 border-b border-border/50">
-                        <CardTitle>Request Status</CardTitle>
-                        <CardDescription>Live breakdown</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex-1 flex flex-col justify-center items-center pb-6 pt-6">
-                        <div className="h-[220px] w-full relative">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie data={stats.charts.statusDistribution} cx="50%" cy="50%" innerRadius={75} outerRadius={95} paddingAngle={5} dataKey="value" stroke="none">
-                                        {stats.charts.statusDistribution.map((entry: any, index: number) => (
-                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: 'hsl(var(--popover)/0.9)', backdropFilter: 'blur(8px)' }} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                            <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-                                <span className="text-4xl font-extrabold tracking-tighter">{stats.overview.totalRequests}</span>
-                                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mt-1">Requests</span>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-8 gap-y-3 mt-4 w-full px-4">
-                            {stats.charts.statusDistribution.map((entry: any, index: number) => (
-                                <div key={index} className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
-                                    <div className="flex items-center gap-2">
-                                        <div className="h-2.5 w-2.5 rounded-full ring-1 ring-offset-1 ring-offset-card" style={{ backgroundColor: entry.color }} />
-                                        <span className="text-muted-foreground font-medium">{entry.name}</span>
-                                    </div>
-                                    <span className="font-bold font-mono">{entry.value}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </motion.div>
-            </div>
-
-            {/* Operational Intelligence Section (New) */}
-            <div className="grid gap-6 md:grid-cols-12">
-                {/* Inventory Health */}
-                <motion.div variants={item} className="md:col-span-6 lg:col-span-4 rounded-2xl border bg-card/40 backdrop-blur-xl text-card-foreground shadow-sm hover:shadow-lg transition-all duration-300">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-border/50">
-                        <div>
-                            <CardTitle className="flex items-center gap-2">
-                                <AlertCircle className="h-4 w-4 text-rose-500" />
-                                Inventory Alerts
-                            </CardTitle>
-                        </div>
-                        <Badge variant="secondary" className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border-rose-500/20">Action Needed</Badge>
-                    </CardHeader>
-                    <CardContent className="pt-4">
-                        <div className="space-y-3">
-                            {[
-                                { name: "Grade 53 Cement", stock: "45 Bags", status: "Critical", color: "bg-rose-500" },
-                                { name: "Steel Rebar 10mm", stock: "120 kg", status: "Low", color: "bg-amber-500" },
-                                { name: "Red Bricks", stock: "500 pcs", status: "Low", color: "bg-amber-500" },
-                            ].map((item, i) => (
-                                <div key={i} className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`h-2 w-2 rounded-full ${item.color} animate-pulse`} />
-                                        <div>
-                                            <p className="text-sm font-medium">{item.name}</p>
-                                            <p className="text-xs text-muted-foreground">Stock: {item.stock}</p>
-                                        </div>
-                                    </div>
-                                    <Badge variant="outline" className="text-[10px]">{item.status}</Badge>
-                                </div>
-                            ))}
-                        </div>
-                        <button className="w-full mt-4 py-2 text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 rounded-lg transition-colors border border-primary/20">
-                            View All Inventory →
-                        </button>
-                    </CardContent>
-                </motion.div>
-
-                {/* Procurement Breakdown */}
-                <motion.div variants={item} className="md:col-span-6 lg:col-span-4 rounded-2xl border bg-card/40 backdrop-blur-xl text-card-foreground shadow-sm hover:shadow-lg transition-all duration-300">
-                    <CardHeader className="pb-2 border-b border-border/50">
-                        <CardTitle className="flex items-center gap-2">
-                            <Package className="h-4 w-4 text-primary" />
-                            Procurement Mix
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-4">
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs font-medium">
-                                    <span>Raw Materials</span>
-                                    <span>65%</span>
-                                </div>
-                                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                                    <div className="h-full bg-primary w-[65%]" />
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs font-medium">
-                                    <span>Safety Gear</span>
-                                    <span>20%</span>
-                                </div>
-                                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                                    <div className="h-full bg-blue-500 w-[20%]" />
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs font-medium">
-                                    <span>Machinery</span>
-                                    <span>15%</span>
-                                </div>
-                                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                                    <div className="h-full bg-purple-500 w-[15%]" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="mt-8 grid grid-cols-2 gap-4">
-                            <div className="p-3 bg-muted/40 rounded-lg">
-                                <p className="text-xs text-muted-foreground">Top Category</p>
-                                <p className="text-sm font-bold mt-1">Cement</p>
-                            </div>
-                            <div className="p-3 bg-muted/40 rounded-lg">
-                                <p className="text-xs text-muted-foreground">M-o-M Growth</p>
-                                <p className="text-sm font-bold mt-1 text-emerald-500">+12%</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </motion.div>
-
-                {/* Team / Insights */}
-                <motion.div variants={item} className="md:col-span-12 lg:col-span-4 rounded-2xl border bg-gradient-to-b from-indigo-900 to-violet-900 text-white shadow-xl shadow-indigo-500/10 relative overflow-hidden flex flex-col">
-                    {/* Decorative blobs */}
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-0 w-40 h-40 bg-purple-500/20 rounded-full blur-2xl transform -translate-x-1/2 translate-y-1/2" />
-
-                    <CardHeader className="relative z-10 pb-2 border-b border-white/10">
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="text-white text-lg flex items-center gap-2">
-                                Top Performers
-                            </CardTitle>
-                            <Badge className="bg-white/10 hover:bg-white/20 text-white border-0 backdrop-blur-md">Week 42</Badge>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="relative z-10 flex-1 flex flex-col gap-4 pt-4">
-                        <div className="flex-1 space-y-3">
-                            {stats.team && stats.team.slice(0, 3).map((member: any, i: number) => (
-                                <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-colors cursor-pointer group">
-                                    <div className="relative">
-                                        <Avatar className="h-10 w-10 border-2 border-indigo-400/30">
-                                            <AvatarImage src={member.image} />
-                                            <AvatarFallback className="bg-indigo-800 text-white font-bold">{member.name[0]}</AvatarFallback>
-                                        </Avatar>
-                                        <div className="absolute -top-1 -right-1 bg-amber-400 text-[8px] text-black font-bold h-4 w-4 rounded-full flex items-center justify-center border-2 border-indigo-900">
-                                            #{i + 1}
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-white truncate group-hover:text-indigo-200 transition-colors">{member.name}</p>
-                                        <p className="text-xs text-indigo-300 truncate">{member.role}</p>
-                                    </div>
-                                    <div className="flex flex-col items-end">
-                                        <div className="flex items-center gap-1 text-emerald-300 text-xs font-bold">
-                                            <TrendingUp className="h-3 w-3" />
-                                            98%
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </motion.div>
-            </div>
-
-            {/* Bottom Section: Recent Activity (Full Width with new Style) */}
-            <div className="grid gap-6 md:grid-cols-12 pb-8">
-                <motion.div variants={item} className="md:col-span-12 rounded-2xl border bg-card/40 backdrop-blur-xl text-card-foreground shadow-sm hover:shadow-lg transition-all duration-300">
-                    <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-border/50">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-primary/10 rounded-lg">
-                                <Clock className="h-5 w-5 text-primary" />
-                            </div>
-                            <div>
-                                <CardTitle>Recent Activity Stream</CardTitle>
-                                <CardDescription>Real-time updates across all sites</CardDescription>
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                            <button className="text-xs font-medium px-3 py-1.5 rounded-md bg-secondary hover:bg-secondary/80 transition-colors">View All</button>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <ScrollArea className="h-[300px]">
-                            <div className="flex flex-col">
-                                {stats.recentActivity.map((req: any, i: number) => (
-                                    <div key={req._id} className="flex items-center justify-between p-4 border-b border-border/40 hover:bg-muted/30 transition-colors group last:border-0">
-                                        <div className="flex-1 min-w-0 flex items-center gap-4">
-                                            <div className="relative flex-shrink-0">
-                                                <Avatar className="h-10 w-10 ring-2 ring-offset-2 ring-transparent group-hover:ring-primary/20 transition-all">
-                                                    <AvatarImage src={req.creatorImage} alt={req.creatorName} />
-                                                    <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-xs">{req.creatorName?.[0] || "?"}</AvatarFallback>
-                                                </Avatar>
-                                                <div className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-background flex items-center justify-center ${req.status === 'approved' ? 'bg-emerald-500' :
-                                                    req.status === 'pending' ? 'bg-amber-500' :
-                                                        'bg-slate-500'
-                                                    }`}>
-                                                    {req.status === 'approved' ? <CheckCircle2 className="h-2.5 w-2.5 text-white" /> :
-                                                        req.status === 'pending' ? <Clock className="h-2.5 w-2.5 text-white" /> :
-                                                            <Activity className="h-2.5 w-2.5 text-white" />}
-                                                </div>
-                                            </div>
-                                            <div className="space-y-1 min-w-0">
-                                                <p className="text-sm font-semibold group-hover:text-primary transition-colors truncate">{req.itemName}</p>
-                                                <div className="flex items-center gap-2 text-xs text-muted-foreground truncate">
-                                                    <span className="font-medium text-foreground/80">{req.creatorName}</span>
-                                                    <span>•</span>
-                                                    <span>{new Date(req.createdAt).toLocaleDateString()}</span>
-                                                    <span className="hidden md:inline">•</span>
-                                                    <span className="hidden md:inline text-xs bg-muted px-1.5 py-0.5 rounded">Site A</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-6">
-                                            <div className="text-right hidden sm:block">
-                                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity</p>
-                                                <p className="text-sm font-bold font-mono">{req.quantity} units</p>
-                                            </div>
-                                            <Badge className={`uppercase text-[10px] font-bold tracking-wider px-2 py-1 h-7 min-w-[90px] justify-center ${req.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20' :
-                                                req.status === 'pending' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20' :
-                                                    'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                                                }`}>
-                                                {req.status}
-                                            </Badge>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </ScrollArea>
-                    </CardContent>
-                </motion.div>
-            </div>
-        </motion.div>
-    );
-}
-
-// Sub-component for KPI Cards
-function KPICard({ title, value, icon: Icon, trend, trendUp, description, color, delay }: any) {
-    const colors: Record<string, string> = {
-        blue: "text-blue-500 bg-blue-50 dark:bg-blue-950/30",
-        amber: "text-amber-500 bg-amber-50 dark:bg-amber-950/30",
-        rose: "text-rose-500 bg-rose-50 dark:bg-rose-950/30",
-        emerald: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30",
-    };
-
-    return (
-        <motion.div variants={item} transition={{ delay }}>
-            <Card className="overflow-hidden hover:shadow-md transition-shadow">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-                    <Icon className={`h-4 w-4 ${(colors[color] || "").split(' ')[0]}`} />
                 </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">{value}</div>
-                    <div className="flex items-center text-xs mt-1">
-                        {trendUp ? (
-                            <ArrowUpRight className="mr-1 h-3 w-3 text-emerald-500" />
-                        ) : (
-                            <ArrowDownRight className={`mr-1 h-3 w-3 ${color === 'rose' || color === 'amber' ? 'text-emerald-500' : 'text-rose-500'}`} />
-                        )}
-                        <span className={trendUp ? "text-emerald-500 font-medium" : "text-emerald-500 font-medium"}>
-                            {trend}
-                        </span>
-                        <span className="text-muted-foreground ml-1">
-                            from last month
-                        </span>
+                <CardContent className="pl-0 pr-4 pb-4 pt-6">
+                    <div className="h-[280px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData} margin={{ top: 15, right: 15, left: 10, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4}/>
+                                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.2} />
+                                <XAxis dataKey="name" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tick={{ dy: 10 }} />
+                                <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}k`} tick={{ dx: -10 }} />
+                                <Tooltip
+                                    formatter={(value: any) => [`₹${value.toLocaleString("en-IN")}`, 'Purchase Volume']}
+                                    contentStyle={{ 
+                                        borderRadius: '12px', 
+                                        border: '1px solid hsl(var(--border)/0.5)', 
+                                        backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                                        backdropFilter: 'blur(8px)', 
+                                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)' 
+                                    }}
+                                />
+                                <Area 
+                                    type="monotone" 
+                                    dataKey="value" 
+                                    stroke="hsl(var(--primary))" 
+                                    strokeWidth={3}
+                                    fillOpacity={1} 
+                                    fill="url(#colorVolume)" 
+                                    dot={{ r: 4, strokeWidth: 1, stroke: "hsl(var(--primary))", fill: "hsl(var(--background))" }}
+                                    activeDot={{ r: 6, strokeWidth: 0, fill: "hsl(var(--primary))" }}
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">{description}</p>
                 </CardContent>
-            </Card>
+            </div>
+ 
+            {/* PO PDF Preview Dialog */}
+            <PDFPreviewDialog
+                open={!!pdfPreviewPoNumber}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setPdfPreviewPoNumber(null);
+                        setPdfPreviewRequestId(null);
+                    }
+                }}
+                poNumber={pdfPreviewPoNumber!}
+                requestId={pdfPreviewRequestId!}
+                type="po"
+            />
         </motion.div>
     );
 }

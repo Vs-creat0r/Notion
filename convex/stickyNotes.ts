@@ -422,9 +422,9 @@ export const complete = mutation({
     const note = await ctx.db.get(args.noteId);
     if (!note) throw new ConvexError("Note not found");
 
-    // Check permissions: Only assignee can mark as completed
-    if (note.assignedTo !== currentUser._id) {
-      throw new ConvexError("Unauthorized: You can only complete notes assigned to you");
+    // Check permissions: Assignee, Creator, or Manager can mark as completed
+    if (note.assignedTo !== currentUser._id && note.createdBy !== currentUser._id && currentUser.role !== "manager") {
+      throw new ConvexError("Unauthorized: You do not have permission to complete this task");
     }
 
     // Update note

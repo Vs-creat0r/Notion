@@ -507,7 +507,8 @@ export default defineSchema({
     status: v.optional(v.string()), // Request status at the time of note (e.g. draft, pending)
     type: v.optional(v.union(
       v.literal("note"), // Manual user note
-      v.literal("log")   // System audit log
+      v.literal("log"),  // System audit log
+      v.literal("followup") // Vendor follow-up log
     )),
     content: v.string(), // The note content
     createdAt: v.number(), // Timestamp

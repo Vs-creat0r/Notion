@@ -51,6 +51,8 @@ import { toast } from "sonner";
 // ... top imports ...
 import type { Doc } from "@/convex/_generated/dataModel";
 import { VendorInfoDialog } from "@/components/purchase/vendor-info-dialog";
+import { VendorHistoryDialog } from "./vendor-history-dialog";
+import { History as HistoryIcon } from "lucide-react";
 
 type ViewMode = "table" | "card";
 
@@ -64,6 +66,7 @@ export function VendorTable({ vendors, viewMode = "table" }: VendorTableProps) {
 
   const [editingVendor, setEditingVendor] = useState<Doc<"vendors"> | null>(null);
   const [viewingVendorId, setViewingVendorId] = useState<string | null>(null);
+  const [historyVendorId, setHistoryVendorId] = useState<string | null>(null);
   const [deletingVendor, setDeletingVendor] = useState<Doc<"vendors"> | null>(null);
   const [loadingVendorId, setLoadingVendorId] = useState<string | null>(null);
   const deleteVendor = useMutation(api.vendors.deleteVendor);
@@ -150,6 +153,10 @@ export function VendorTable({ vendors, viewMode = "table" }: VendorTableProps) {
                   <DropdownMenuItem onClick={() => setEditingVendor(vendor)}>
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Vendor
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setHistoryVendorId(vendor._id)}>
+                    <HistoryIcon className="h-4 w-4 mr-2" />
+                    View History
                   </DropdownMenuItem>
                   {canDelete && (
                     <>
@@ -306,6 +313,10 @@ export function VendorTable({ vendors, viewMode = "table" }: VendorTableProps) {
                               <Edit className="h-4 w-4 mr-2" />
                               Edit Vendor
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setHistoryVendorId(vendor._id)}>
+                              <HistoryIcon className="h-4 w-4 mr-2" />
+                              View History
+                            </DropdownMenuItem>
                             {canDelete && (
                               <>
                                 <DropdownMenuSeparator />
@@ -365,6 +376,13 @@ export function VendorTable({ vendors, viewMode = "table" }: VendorTableProps) {
         open={viewingVendorId !== null}
         onOpenChange={(open) => !open && setViewingVendorId(null)}
         vendorId={viewingVendorId as any}
+      />
+
+      {/* Vendor History Dialog */}
+      <VendorHistoryDialog
+        open={historyVendorId !== null}
+        onOpenChange={(open) => !open && setHistoryVendorId(null)}
+        vendorId={historyVendorId as any}
       />
 
       {/* Delete Confirmation Dialog */}

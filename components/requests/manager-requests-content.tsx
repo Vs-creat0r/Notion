@@ -9,6 +9,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useSearchParams, useRouter } from "next/navigation";
 import { RequestsTable } from "@/components/requests/requests-table";
 import { RequestDetailsDialog } from "@/components/requests/request-details-dialog";
 import { CostComparisonDialog } from "@/components/purchase/cost-comparison-dialog";
@@ -73,18 +74,46 @@ export function ManagerRequestsContent() {
     const [pdfPreviewPoNumber, setPdfPreviewPoNumber] = useState<string | null>(null);
     const [pdfRequestNumber, setPdfRequestNumber] = useState<string | null>(null);
 
-    // Read requestId from URL if present
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
+    // Read query params from URL if present
     useEffect(() => {
-        if (typeof window !== "undefined") {
-            const url = new URL(window.location.href);
-            const reqId = url.searchParams.get("requestId");
-            if (reqId) {
-                setSelectedRequestId(reqId as Id<"requests">);
-                url.searchParams.delete("requestId");
-                window.history.replaceState({}, "", url.toString());
-            }
+        if (!searchParams) return;
+        
+        const reqId = searchParams.get("requestId");
+        const status = searchParams.get("status");
+        const workF = searchParams.get("work_filter");
+        const showPendingPO = searchParams.get("show_pending_po");
+        
+        let changed = false;
+        const newParams = new URLSearchParams(searchParams.toString());
+        
+        if (reqId) {
+            setSelectedRequestId(reqId as Id<"requests">);
+            newParams.delete("requestId");
+            changed = true;
         }
-    }, []);
+        if (status) {
+            setStatusFilter(status.split(","));
+            newParams.delete("status");
+            changed = true;
+        }
+        if (workF) {
+            setWorkFilter(workF);
+            newParams.delete("work_filter");
+            changed = true;
+        }
+        if (showPendingPO === "true") {
+            setShowPendingPODialog(true);
+            newParams.delete("show_pending_po");
+            changed = true;
+        }
+        
+        if (changed) {
+            router.replace(`?${newParams.toString()}`);
+        }
+    }, [searchParams, router]);
     const [searchQuery, setSearchQuery] = useState<string>("");
     const [workFilter, setWorkFilter] = useState<string>("work_pending");
     const [categoryFilter, setCategoryFilter] = useState<string>("all");

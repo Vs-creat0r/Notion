@@ -338,3 +338,85 @@ export const deleteVendor = mutation({
   },
 });
 
+/**
+ * Get vendor history (completed POs, GRNs, and logs)
+ */
+export const getVendorHistory = query({
+  args: { vendorId: v.id("vendors") },
+  handler: async (ctx, args) => {
+    const currentUser = await getCurrentUser(ctx);
+    if (currentUser.role !== "purchase_officer" && currentUser.role !== "manager") {
+      throw new ConvexError("Unauthorized");
+    }
+
+    const purchaseOrders = await ctx.db
+      .query("purchaseOrders")
+      .withIndex("by_vendor_id", (q) => q.eq("vendorId", args.vendorId))
+      .collect();
+
+    const completedPOs = purchaseOrders.filter(po => 
+      po.status === "delivered" || po.status === "closed"
+    );
+
+    const history = await Promise.all(completedPOs.map(async (po) => {
+      // Get Logs (from request_notes)
+      let requestNumberToUse = po.poNumber;
+      if (po.requestId) {
+        const request = await ctx.db.get(po.requestId);
+        if (request) {
+          requestNumberToUse = request.requestNumber;
+        }
+      }
+
+      const allNotes = await ctx.db
+        .query("request_notes")
+        .withIndex("by_request_number", (q) => q.eq("requestNumber", requestNumberToUse))
+        .order("asc")
+        .collect();
+
+      const logs = allNotes.filter(note => note.type === "followup");
+
+      const enrichedLogs = await Promise.all(logs.map(async (log) => {
+        const user = await ctx.db.get(log.userId);
+        return {
+          _id: log._id,
+          content: log.content,
+          createdAt: log.createdAt,
+          userName: user?.fullName || "Unknown",
+        };
+      }));
+
+      // Get Site
+      let siteName = "Unknown Site";
+      if (po.deliverySiteId) {
+        const site = await ctx.db.get(po.deliverySiteId);
+        if (site) siteName = site.name;
+      } else if (po.requestId) {
+        const request = await ctx.db.get(po.requestId);
+        if (request?.siteId) {
+          const site = await ctx.db.get(request.siteId);
+          if (site) siteName = site.name;
+        }
+      }
+
+      // Get GRNs
+      const grns = await ctx.db
+        .query("grns")
+        .withIndex("by_po_id", (q) => q.eq("poId", po._id))
+        .collect();
+      const grnNumbers = grns.map(g => g.grnNumber).join(", ");
+
+      return {
+        poId: po._id,
+        poNumber: po.poNumber,
+        material: po.itemDescription,
+        site: siteName,
+        grnNumbers: grnNumbers || "No GRN",
+        completedAt: po.actualDeliveryDate || po.updatedAt,
+        logs: enrichedLogs,
+      };
+    }));
+
+    return history.sort((a, b) => b.completedAt - a.completedAt);
+  },
+});

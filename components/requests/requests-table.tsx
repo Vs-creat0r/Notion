@@ -43,6 +43,7 @@ import { ProjectInfoDialog } from "@/components/projects/project-info-dialog";
 import { NotesTimelineDialog } from "./notes-timeline-dialog";
 import { GRNAuditDialog } from "./grn-audit-dialog";
 import { PDFPreviewDialog } from "@/components/purchase/pdf-preview-dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import type { Id } from "@/convex/_generated/dataModel";
 import { EditPOQuantityDialog } from "@/components/purchase/edit-po-quantity-dialog";
 import { CreateDCMultiDialog } from "@/components/purchase/create-dc-multi-dialog";
@@ -211,13 +212,25 @@ interface Request {
     profileImage?: string;
   } | null;
   notesCount?: number;
-  poNumber?: string;
+  poId?: Id<"purchaseOrders"> | null;
+  poNumber?: string | null;
+  ccId?: Id<"costComparisons"> | null;
+  ccNumber?: string | null;
+  dcId?: Id<"deliveries"> | null;
+  dcNumber?: string | null;
   deliveryId?: Id<"deliveries">;
   selectedVendorId?: Id<"vendors"> | string | null;
 }
 
 interface RequestsTableProps {
   requests: Request[] | undefined;
+  idType?: "request" | "po" | "cc" | "dc";
+  onIdTypeChange?: (val: "request" | "po" | "cc" | "dc") => void;
+  filterProjectId?: Id<"projects"> | "all" | null;
+  onFilterProjectIdChange?: (val: Id<"projects"> | "all" | null) => void;
+  filterDate?: Date | null;
+  onFilterDateChange?: (val: Date | null) => void;
+  availableProjects?: Array<{_id: Id<"projects">, name: string}>;
   onViewDetails?: (requestId: Id<"requests">) => void;
   onOpenCC?: (requestId: Id<"requests">, requestIds?: Id<"requests">[]) => void; // Open cost comparison dialog
   onDirectPO?: (requestId: Id<"requests">) => void; // Handle Direct PO action
@@ -241,10 +254,18 @@ interface RequestsTableProps {
   onCreateBulkPO?: (requestIds: Id<"requests">[]) => void; // Create PO for multiple items
   onMoveToCC?: (requestId: Id<"requests">) => void; // Move to CC
   onViewPDF?: (poNumber: string, requestId: Id<"requests">) => void; // View PDF with optional request filter
+  searchQuery?: string;
 }
 
 export function RequestsTable({
   requests,
+  idType = "request",
+  onIdTypeChange,
+  filterProjectId,
+  onFilterProjectIdChange,
+  filterDate,
+  onFilterDateChange,
+  availableProjects = [],
   onViewDetails,
   onOpenCC,
   onDirectPO,
@@ -268,6 +289,7 @@ export function RequestsTable({
   onCreateBulkPO,
   onMoveToCC,
   onViewPDF,
+  searchQuery,
 }: RequestsTableProps) {
   const userRole = useUserRole();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -1337,15 +1359,87 @@ export function RequestsTable({
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border">
                   <TableHead className="w-[50px]"></TableHead>
-                  <TableHead className="w-[120px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">Request ID</TableHead>
-                  <TableHead className="min-w-[180px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">Project / Location</TableHead>
-                  <TableHead className="w-[150px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">Dates</TableHead>
-                  <TableHead className="min-w-[350px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">Item Details</TableHead>
+                  <TableHead className="w-[120px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">
+                    {onIdTypeChange ? (
+                      <Select value={idType} onValueChange={(v: any) => onIdTypeChange(v)}>
+                        <SelectTrigger className="h-8 w-fit gap-1.5 border-none bg-transparent hover:bg-muted/50 px-2 py-1 -ml-2 text-xs font-bold uppercase tracking-tight text-muted-foreground/80 focus:ring-0 shadow-none rounded-md transition-colors">
+                          <SelectValue placeholder="REQUEST ID" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="request">REQUEST ID</SelectItem>
+                          <SelectItem value="po">PO ID</SelectItem>
+                          <SelectItem value="cc">CC ID</SelectItem>
+                          <SelectItem value="dc">DC ID</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      "Request ID"
+                    )}
+                  </TableHead>
+                  <TableHead className="min-w-[180px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">
+                    {onFilterProjectIdChange && availableProjects.length > 0 ? (
+                      <Select value={filterProjectId || "all"} onValueChange={(v) => onFilterProjectIdChange(v === "all" ? null : v as Id<"projects">)}>
+                        <SelectTrigger className="h-8 w-fit gap-1.5 border-none bg-transparent hover:bg-muted/50 px-2 py-1 -ml-2 text-xs font-bold uppercase tracking-tight text-muted-foreground/80 focus:ring-0 shadow-none rounded-md transition-colors">
+                          <SelectValue placeholder="PROJECT / LOCATION" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">PROJECT / LOCATION</SelectItem>
+                          {availableProjects.map(p => (
+                            <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      "PROJECT / LOCATION"
+                    )}
+                  </TableHead>
+                  <TableHead className="w-[150px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80 overflow-visible">
+                    {onFilterDateChange ? (
+                      <div className="relative w-fit -ml-2">
+                        <Input 
+                          type="date"
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-50"
+                          value={filterDate ? format(filterDate, "yyyy-MM-dd") : ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            onFilterDateChange(val ? new Date(val) : null);
+                          }}
+                        />
+                        <button className="flex items-center justify-start h-8 w-fit gap-1.5 border-none bg-transparent hover:bg-muted/50 px-2 py-1 text-xs font-bold uppercase tracking-tight text-muted-foreground/80 rounded-md transition-colors pointer-events-none">
+                          <span>{filterDate ? format(filterDate, "dd MMM yyyy") : "DATES"}</span>
+                          <ChevronDown className="h-4 w-4 opacity-50" />
+                        </button>
+                      </div>
+                    ) : (
+                      "DATES"
+                    )}
+                  </TableHead>
+                  <TableHead className="min-w-[300px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">Item Details</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold text-xs uppercase tracking-tight text-muted-foreground/80">QTY</TableHead>
                   <TableHead className="text-right min-w-[320px] font-bold text-xs uppercase tracking-tight text-muted-foreground/80">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {groupedRequestsArray.map((group) => {
+                {groupedRequestsArray.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={7} className="h-[400px]">
+                      <div className="flex flex-col items-center justify-center w-full h-full text-center animate-in fade-in-50 duration-500 py-24">
+                        <div className="flex items-center justify-center w-20 h-20 rounded-full bg-slate-100 ring-8 ring-slate-50 mb-6 dark:bg-slate-800 dark:ring-slate-900/50">
+                          <FileText className="w-8 h-8 text-slate-400" strokeWidth={1.5} />
+                        </div>
+                        <h3 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+                          No requests found
+                        </h3>
+                        <p className="mt-2 text-sm max-w-sm text-slate-500 dark:text-slate-400">
+                          {searchQuery
+                            ? "Try adjusting your search criteria or clearing active filters to see more results."
+                            : "No requests found with current status filter"}
+                        </p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  groupedRequestsArray.map((group) => {
                   const { requestNumber, items, firstItem } = group;
                   const isExpanded = expandedGroups.has(requestNumber);
                   const hasMultipleItems = items.length > 1;
@@ -1480,7 +1574,12 @@ export function RequestsTable({
 
                         {/* Request # */}
                         <TableCell className="py-4">
-                          <div className="font-mono text-lg font-black text-foreground tracking-tight">#{requestNumber}</div>
+                          <div className="font-mono text-lg font-black text-foreground tracking-tight">
+                            {idType === "po" && firstItem.poNumber ? firstItem.poNumber :
+                             idType === "cc" && firstItem.ccNumber ? firstItem.ccNumber :
+                             idType === "dc" && firstItem.dcNumber ? firstItem.dcNumber :
+                             `#${requestNumber}`}
+                          </div>
                           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                             {hasMultipleItems && (
                               <span className="text-[10px] uppercase font-bold text-muted-foreground/80 tracking-wide">{items.length} items</span>
@@ -1535,50 +1634,45 @@ export function RequestsTable({
                         </TableCell>
 
                         {/* Items Preview */}
-                        <TableCell className="py-4">
-                          {isExpanded ? (
+                        {isExpanded ? (
+                          <TableCell className="py-4" colSpan={2}>
                             <span className="text-xs font-bold text-primary italic flex items-center gap-1.5 animate-pulse">
                               <ChevronDown className="h-3.5 w-3.5" /> Viewing details below...
                             </span>
-                          ) : (
-                            <div className="flex items-start gap-3">
-                              <div className={cn(
-                                "shrink-0 flex items-center justify-center mt-1",
-                                getItemPhotos(firstItem).length > 0 ? "w-10 h-10 ring-1 ring-border rounded-md overflow-hidden bg-background" : "w-10 h-10"
-                              )}>
-                                {getItemPhotos(firstItem).length > 0 ? (
-                                  <CompactImageGallery images={getItemPhotos(firstItem)} maxDisplay={1} size="sm" />
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground/30 font-medium italic">No Image</span>
-                                )}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-start gap-2">
-                                  <span className="bg-primary/10 text-primary dark:text-white text-[10px] font-black font-mono px-1.5 py-0.5 rounded border border-primary/20 dark:border-primary/40 shadow-sm shrink-0 mt-0.5">
-                                    #{firstItem.itemOrder ?? items.length}
-                                  </span>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setSelectedItemName(firstItem.itemName); }}
-                                    className="font-bold text-sm text-foreground dark:text-white mb-0.5 truncate hover:text-primary dark:hover:text-primary/90 hover:underline text-left block w-full leading-tight"
-                                    title={firstItem.itemName}
-                                  >
-                                    {firstItem.itemName}
-                                  </button>
-                                </div>
-                                {firstItem.description && (
-                                  <div className="w-full text-xs text-muted-foreground mt-1">
-                                    <ExpandableText text={firstItem.description} className="text-xs text-muted-foreground" limit={60} />
+                          </TableCell>
+                        ) : (
+                          <>
+                            <TableCell className="py-4 min-w-[300px] align-top">
+                              <div className="flex items-start gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start gap-2">
+                                    <span className="bg-primary/10 text-primary dark:text-white text-[10px] font-black font-mono px-1.5 py-0.5 rounded border border-primary/20 dark:border-primary/40 shadow-sm shrink-0 mt-0.5">
+                                      #{firstItem.itemOrder ?? items.length}
+                                    </span>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setSelectedItemName(firstItem.itemName); }}
+                                      className="font-bold text-sm text-foreground dark:text-white mb-0.5 truncate hover:text-primary dark:hover:text-primary/90 hover:underline text-left block w-full leading-tight"
+                                      title={firstItem.itemName}
+                                    >
+                                      {firstItem.itemName}
+                                    </button>
                                   </div>
-                                )}
-                              </div>
-                              <div className="shrink-0 ml-2 mt-1">
-                                <div className="text-sm font-bold text-foreground">
-                                  {firstItem.quantity} <span className="text-xs text-muted-foreground font-normal">{firstItem.unit}</span>
+                                  {firstItem.description && (
+                                    <div className="w-full text-xs text-muted-foreground mt-1">
+                                      <ExpandableText text={firstItem.description} className="text-xs text-muted-foreground" limit={60} />
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            </div>
-                          )}
-                        </TableCell>
+                            </TableCell>
+                            <TableCell className="py-4 text-center align-top">
+                              <div className="inline-flex flex-col items-center justify-center min-w-[60px] bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700/50 shadow-sm mt-1">
+                                <span className="text-lg font-black text-foreground leading-none">{firstItem.quantity}</span>
+                                <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-widest mt-0.5">{firstItem.unit}</span>
+                              </div>
+                            </TableCell>
+                          </>
+                        )}
 
                         {/* Actions */}
                         <TableCell className="text-right py-4">
@@ -1835,7 +1929,7 @@ export function RequestsTable({
                                         itemName: i.itemName,
                                         quantity: i.quantity,
                                         unit: i.unit,
-                                        poNumber: i.poNumber
+                                        poNumber: i.poNumber || undefined
                                       })));
                                       setShowCreateDCDialog(true);
                                     }}
@@ -1910,7 +2004,7 @@ export function RequestsTable({
                                 <div
                                   key={item._id}
                                   className={cn(
-                                    "relative grid grid-cols-[24px_50px_60px_2fr_100px_80px_320px] gap-4 items-center p-3 rounded-lg transition-all w-full mb-2 shadow-sm overflow-visible",
+                                    "relative grid grid-cols-[24px_120px_2fr_100px_80px_320px] gap-4 items-center p-3 rounded-lg transition-all w-full mb-2 shadow-sm overflow-visible",
                                     "bg-white dark:bg-slate-950",
                                     getStatusBgColor(item.status),
                                     "border border-border/50 hover:shadow-md h-auto min-h-[80px]",
@@ -1955,18 +2049,12 @@ export function RequestsTable({
 
                                   {/* Item Number */}
                                   <div className="text-center pb-1">
-                                    <span className="bg-primary/10 text-primary text-xs font-black font-mono px-2 py-0.5 rounded border border-primary/20 shadow-sm block w-fit mx-auto">
-                                      #{item.itemOrder ?? (items.length - idx)}
+                                    <span className="bg-primary/10 text-primary text-xs font-black font-mono px-2 py-0.5 rounded border border-primary/20 shadow-sm block w-fit mx-auto truncate max-w-[110px]" title={item.poNumber || item.ccNumber || item.dcNumber || `#${item.itemOrder ?? (items.length - idx)}`}>
+                                      {item.poNumber ? item.poNumber :
+                                       item.ccNumber ? item.ccNumber :
+                                       item.dcNumber ? item.dcNumber :
+                                       `#${item.itemOrder ?? (items.length - idx)}`}
                                     </span>
-                                  </div>
-
-                                  {/* Image */}
-                                  <div className="shrink-0 flex justify-center">
-                                    {getItemPhotos(item).length > 0 ? (
-                                      <CompactImageGallery images={getItemPhotos(item)} maxDisplay={1} size="sm" />
-                                    ) : (
-                                      <span className="text-[10px] text-muted-foreground/40 font-medium italic">No Image</span>
-                                    )}
                                   </div>
 
                                   {/* Item Name & Description */}
@@ -2130,7 +2218,7 @@ export function RequestsTable({
                                                       itemName: item.itemName,
                                                       quantity: item.quantity,
                                                       unit: item.unit,
-                                                      poNumber: item.poNumber
+                                                      poNumber: item.poNumber || undefined
                                                     }]);
                                                     setShowCreateDCDialog(true);
                                                   }}
@@ -2205,7 +2293,8 @@ export function RequestsTable({
                       )}
                     </Fragment>
                   );
-                })}
+                })
+              )}
               </TableBody>
             </Table>
           </div>
@@ -2273,7 +2362,7 @@ export function RequestsTable({
             }}
             requestId={requests?.find(r => r.requestNumber === selectedRequestNumberForGRN)?._id}
             requestIds={requests?.filter(r => r.requestNumber === selectedRequestNumberForGRN).map(r => r._id) || []}
-            poNumber={requests?.find(r => r.requestNumber === selectedRequestNumberForGRN)?.poNumber}
+            poNumber={requests?.find(r => r.requestNumber === selectedRequestNumberForGRN)?.poNumber || undefined}
             onOpenCC={onOpenCC}
             onViewPDF={onViewPDF}
             onViewDC={(deliveryId) => setViewDCId(deliveryId)}

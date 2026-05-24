@@ -86,6 +86,9 @@ export function PurchaseRequestsContent() {
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const { viewMode, toggleViewMode } = useViewMode();
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [idType, setIdType] = useState<"request" | "po" | "cc" | "dc">("request");
+  const [filterProjectId, setFilterProjectId] = useState<Id<"projects"> | "all" | null>(null);
+  const [filterDate, setFilterDate] = useState<Date | null>(null);
   const [selectedItemName, setSelectedItemName] = useState<string | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState<Id<"sites"> | null>(null);
   const [showDirectPODialog, setShowDirectPODialog] = useState(false);
@@ -147,7 +150,7 @@ export function PurchaseRequestsContent() {
   // Reset page on filter change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterStatus.length, viewMode]);
+  }, [searchQuery, filterStatus.length, viewMode, idType, filterProjectId, filterDate]);
 
   // Debounced search (optional but good for consistency)
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
@@ -189,6 +192,41 @@ export function PurchaseRequestsContent() {
       });
     }
 
+    // Apply Document ID Type Filter
+    if (idType !== "request") {
+      filtered = filtered.filter(r => {
+        if (idType === "po") return !!r.poNumber;
+        if (idType === "cc") return !!r.ccNumber;
+        if (idType === "dc") return !!r.dcNumber;
+        return true;
+      });
+    }
+
+    // Apply Project Filter
+    if (filterProjectId && filterProjectId !== "all") {
+      filtered = filtered.filter(r => r.projectId === filterProjectId);
+    }
+
+    // Apply Date Filter
+    if (filterDate) {
+      filtered = filtered.filter(r => {
+        const itemDate = new Date(r.createdAt);
+        const matchesCreated = itemDate.getDate() === filterDate.getDate() &&
+                               itemDate.getMonth() === filterDate.getMonth() &&
+                               itemDate.getFullYear() === filterDate.getFullYear();
+        
+        if (idType === "po" && r.requiredBy) {
+          const reqDate = new Date(r.requiredBy);
+          const matchesDue = reqDate.getDate() === filterDate.getDate() &&
+                             reqDate.getMonth() === filterDate.getMonth() &&
+                             reqDate.getFullYear() === filterDate.getFullYear();
+          return matchesCreated || matchesDue;
+        }
+        
+        return matchesCreated;
+      });
+    }
+
     // Group by requestNumber like manager pages
     const groupedRequests = new Map<string, typeof filtered>();
 
@@ -221,7 +259,19 @@ export function PurchaseRequestsContent() {
       });
 
     return groupedRequestsArray;
-  }, [allRequests, filterStatus, debouncedSearchQuery]);
+  }, [allRequests, filterStatus, debouncedSearchQuery, idType, filterProjectId, filterDate]);
+
+  // Extract available projects from allRequests
+  const availableProjects = useMemo(() => {
+    if (!allRequests) return [];
+    const projectsMap = new Map<string, { _id: Id<"projects">, name: string }>();
+    allRequests.forEach(r => {
+      if (r.project) {
+        projectsMap.set(r.project._id, { _id: r.project._id, name: r.project.name });
+      }
+    });
+    return Array.from(projectsMap.values());
+  }, [allRequests]);
 
   // Pagination Logic
   const totalItems = filteredRequestGroups.length;
@@ -862,28 +912,16 @@ export function PurchaseRequestsContent() {
           </div>
 
           {/* Requests Display */}
-          {filteredRequestGroups.length === 0 ? (
-            <Card>
-              <CardContent className="py-12">
-                <div className="text-center space-y-3">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-muted">
-                    <FileText className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-lg">No requests found</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {searchQuery
-                        ? "Try adjusting your search criteria"
-                        : "No requests found with current status filter"
-                      }
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : viewMode === "table" ? (
+          {viewMode === "table" ? (
             <RequestsTable
               requests={paginatedRequests as any}
+              idType={idType}
+              onIdTypeChange={setIdType}
+              filterProjectId={filterProjectId === "all" ? null : filterProjectId}
+              onFilterProjectIdChange={setFilterProjectId}
+              filterDate={filterDate}
+              onFilterDateChange={setFilterDate}
+              availableProjects={availableProjects}
               viewMode="table"
               onViewDetails={setSelectedRequestId}
               onOpenCC={(requestId, allIds) => {
@@ -899,6 +937,7 @@ export function PurchaseRequestsContent() {
               onConfirmDelivery={setShowConfirmDelivery}
               onViewPDF={(poNumber, requestId) => { setPdfPreviewPoNumber(poNumber); setPdfPreviewRequestId(requestId); }}
               showCreator={true}
+              searchQuery={searchQuery}
             />
           ) : (
             <div className="space-y-8">

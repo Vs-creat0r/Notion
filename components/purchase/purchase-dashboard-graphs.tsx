@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -644,14 +644,8 @@ export function PurchaseDashboardGraphs() {
 
                 {/* ── Table Container (scrollable on mobile) ── */}
                 <div className="overflow-x-auto">
-                    {followupGroups.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
-                            <CheckCircle2 className="h-10 w-10 opacity-20" />
-                            <p className="text-sm">No follow-ups due in the next 10 days</p>
-                        </div>
-                    ) : (
-                        <div className="min-w-[860px]">
-                            {/* ── Column Headers (with inline filters) ── */}
+                    <div className="min-w-[860px]">
+                        {/* ── Column Headers (with inline filters) ── */}
                             <div className="grid items-center border-b border-border/70 bg-muted/30"
                                 style={{ gridTemplateColumns: '120px 1fr 130px 1fr 180px 200px' }}>
 
@@ -744,7 +738,10 @@ export function PurchaseDashboardGraphs() {
                                     return (
                                         <>
                                             {pageItems.length === 0 ? (
-                                                <div className="py-10 text-center text-sm text-muted-foreground">No results match your search.</div>
+                                                <div className="py-12 text-center text-sm text-muted-foreground flex flex-col items-center gap-3">
+                                                    <CheckCircle2 className="h-10 w-10 opacity-20" />
+                                                    <p>{followupSearch || followupProjectId !== "all" || followupDate ? "No results match your filters." : "No follow-ups due in the next 10 days"}</p>
+                                                </div>
                                             ) : pageItems.map((g) => {
                                                 const vendor = vendorsQuery?.find(v => v._id === g.firstItem.selectedVendorId);
                                                 const proj = projects?.find(p => p._id === g.firstItem.projectId);
@@ -760,10 +757,7 @@ export function PurchaseDashboardGraphs() {
                                                 return (
                                                     <div
                                                         key={g.key}
-                                                        className={cn(
-                                                            "grid items-start transition-colors",
-                                                            isUrgent ? "bg-red-500/5 hover:bg-red-500/8" : "hover:bg-muted/20"
-                                                        )}
+                                                        className="grid items-start transition-colors hover:bg-muted/20"
                                                         style={{ gridTemplateColumns: '120px 1fr 130px 1fr 180px 200px' }}
                                                     >
                                                         {/* PO ID */}
@@ -923,7 +917,6 @@ export function PurchaseDashboardGraphs() {
                                 })()}
                             </div>
                         </div>
-                    )}
                 </div>
             </div>
 

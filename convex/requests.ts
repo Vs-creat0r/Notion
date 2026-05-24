@@ -600,10 +600,33 @@ export const getPurchaseRequestsByStatus = query({
           }
         }
 
+        let dcId: Id<"deliveries"> | null = null;
+        let dcNumber: string | null = null;
+        if (request.deliveryId) {
+          const delivery = await ctx.db.get(request.deliveryId);
+          if (delivery) {
+            dcId = delivery._id;
+            dcNumber = delivery.deliveryId;
+          }
+        } else if (poId) {
+          const delivery = await ctx.db
+            .query("deliveries")
+            .withIndex("by_po_id", (q) => q.eq("poId", poId))
+            .first();
+          if (delivery) {
+            dcId = delivery._id;
+            dcNumber = delivery.deliveryId;
+          }
+        }
+
         return {
           ...request,
           poId,
           poNumber,
+          ccId: costComparison ? costComparison._id : null,
+          ccNumber: costComparison?.ccNumber || null,
+          dcId,
+          dcNumber,
           project: request.projectId ? await ctx.db.get(request.projectId) : null,
           site: site
             ? {
@@ -749,10 +772,33 @@ export const getAllRequests = query({
           }
         }
 
+        let dcId: Id<"deliveries"> | null = null;
+        let dcNumber: string | null = null;
+        if (request.deliveryId) {
+          const delivery = await ctx.db.get(request.deliveryId);
+          if (delivery) {
+            dcId = delivery._id;
+            dcNumber = delivery.deliveryId;
+          }
+        } else if (poId) {
+          const delivery = await ctx.db
+            .query("deliveries")
+            .withIndex("by_po_id", (q) => q.eq("poId", poId))
+            .first();
+          if (delivery) {
+            dcId = delivery._id;
+            dcNumber = delivery.deliveryId;
+          }
+        }
+
         return {
           ...request,
           poId,
           poNumber,
+          ccId: costComparison ? costComparison._id : null,
+          ccNumber: costComparison?.ccNumber || null,
+          dcId,
+          dcNumber,
           project: request.projectId ? await ctx.db.get(request.projectId) : null,
           site: site
             ? {
@@ -2197,6 +2243,17 @@ export const updateLastTalkText = mutation({
     await ctx.db.patch(args.requestId, {
       lastTalkText: args.lastTalkText,
     });
+
+    if (args.lastTalkText.trim().length > 0) {
+      await ctx.db.insert("request_notes", {
+        requestNumber: request.requestNumber,
+        userId: currentUser._id,
+        role: currentUser.role,
+        content: args.lastTalkText,
+        type: "followup",
+        createdAt: Date.now(),
+      });
+    }
   },
 });
 
@@ -2871,5 +2928,20 @@ export const reopenPurchaseRequest = mutation({
       type: "log",
       createdAt: Date.now(),
     });
+  },
+});
+
+export const deleteRequestNote = mutation({
+  args: {
+    noteIds: v.array(v.id("request_notes")),
+  },
+  handler: async (ctx, args) => {
+    const currentUser = await getCurrentUser(ctx);
+    if (currentUser.role !== "manager") {
+      throw new ConvexError("Only managers can delete notes");
+    }
+    for (const id of args.noteIds) {
+      await ctx.db.delete(id);
+    }
   },
 });
