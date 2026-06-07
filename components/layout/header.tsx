@@ -7,7 +7,7 @@
  */
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useEffect, Suspense } from "react";
+import { useEffect, Suspense, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "./user-menu";
 import { ChatIcon } from "@/components/chat/chat-icon";
@@ -35,10 +35,15 @@ interface HeaderProps {
 function HeaderContent({ userRole }: HeaderProps) {
   const currentUser = useQuery(api.users.getCurrentUser);
   const { isChatOpen, setIsChatOpen, isStickyNotesOpen, setIsStickyNotesOpen } = useChatWidth();
+  const [isMounted, setIsMounted] = useState(false);
 
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     // Check for sticky notes param
@@ -63,14 +68,12 @@ function HeaderContent({ userRole }: HeaderProps) {
     }
   }, [searchParams, setIsStickyNotesOpen, setIsChatOpen, router, pathname]);
 
-  // Suppress hydration warning for currentUser conditional rendering
-  // currentUser is undefined on server but populated on client
-  if (!currentUser) {
-    return (
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-16 items-center justify-between px-4 md:px-6">
-          {/* Mobile menu (< md) */}
-          <div className="md:hidden">
+  return (
+    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex h-16 items-center justify-between px-4 md:px-6">
+        {/* Mobile menu (< md) */}
+        <div className="md:hidden">
+          {isMounted ? (
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon">
@@ -85,40 +88,12 @@ function HeaderContent({ userRole }: HeaderProps) {
                 <MobileSidebar userRole={userRole} />
               </SheetContent>
             </Sheet>
-          </div>
-
-          {/* Desktop: Empty space (brand is in sidebar) */}
-          <div className="hidden md:block" />
-
-          {/* Right side: Theme toggle + User Menu only (no chat/sticky notes) */}
-          <div className="flex items-center gap-2 md:gap-4">
-            <ThemeToggle />
-            <UserMenu />
-          </div>
-        </div>
-      </header>
-    );
-  }
-
-  return (
-    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-between px-4 md:px-6">
-        {/* Mobile menu (< md) */}
-        <div className="md:hidden">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle menu</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-64">
-              <VisuallyHidden>
-                <SheetTitle>Navigation Menu</SheetTitle>
-              </VisuallyHidden>
-              <MobileSidebar userRole={userRole} />
-            </SheetContent>
-          </Sheet>
+          ) : (
+            <Button variant="ghost" size="icon">
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle menu</span>
+            </Button>
+          )}
         </div>
 
         {/* Desktop: Empty space (brand is in sidebar) */}
@@ -126,63 +101,67 @@ function HeaderContent({ userRole }: HeaderProps) {
 
         {/* Right side: Sticky Notes + Chat + Theme toggle + User Menu */}
         <div className="flex items-center gap-2 md:gap-4">
-          <>
-            <NotificationBell />
-            <StickyNotesIcon
-              onClick={() => {
-                if (isStickyNotesOpen) {
-                  // If open, close it
-                  setIsStickyNotesOpen(false);
-                } else {
-                  // If closed, open it and close chat
-                  setIsStickyNotesOpen(true);
-                  setIsChatOpen(false);
-                }
-              }}
-              isActive={isStickyNotesOpen}
-            />
-            <ChatIcon
-              onClick={() => {
-                if (isChatOpen) {
-                  // If open, close it
-                  setIsChatOpen(false);
-                } else {
-                  // If closed, open it and close sticky notes
-                  setIsChatOpen(true);
-                  setIsStickyNotesOpen(false);
-                }
-              }}
-              isActive={isChatOpen}
-            />
-          </>
+          {isMounted && currentUser && (
+            <>
+              <NotificationBell />
+              <StickyNotesIcon
+                onClick={() => {
+                  if (isStickyNotesOpen) {
+                    // If open, close it
+                    setIsStickyNotesOpen(false);
+                  } else {
+                    // If closed, open it and close chat
+                    setIsStickyNotesOpen(true);
+                    setIsChatOpen(false);
+                  }
+                }}
+                isActive={isStickyNotesOpen}
+              />
+              <ChatIcon
+                onClick={() => {
+                  if (isChatOpen) {
+                    // If open, close it
+                    setIsChatOpen(false);
+                  } else {
+                    // If closed, open it and close sticky notes
+                    setIsChatOpen(true);
+                    setIsStickyNotesOpen(false);
+                  }
+                }}
+                isActive={isChatOpen}
+              />
+            </>
+          )}
 
           <ThemeToggle />
           <UserMenu />
         </div>
       </div>
 
-      {/* Chat Sheet with Resizable Left Border */}
-      <ResizableChatSheet open={isChatOpen} onOpenChange={setIsChatOpen}>
-        <ChatWindow
-          currentUserId={currentUser._id}
-          onClose={() => setIsChatOpen(false)}
-        />
-      </ResizableChatSheet>
+      {isMounted && currentUser && (
+        <>
+          {/* Chat Sheet with Resizable Left Border */}
+          <ResizableChatSheet open={isChatOpen} onOpenChange={setIsChatOpen}>
+            <ChatWindow
+              currentUserId={currentUser._id}
+              onClose={() => setIsChatOpen(false)}
+            />
+          </ResizableChatSheet>
 
-      {/* Sticky Notes Sheet with Resizable Left Border */}
-      <>
-        <ResizableStickyNotesSheet open={isStickyNotesOpen} onOpenChange={setIsStickyNotesOpen}>
-          <StickyNotesWindow
+          {/* Sticky Notes Sheet with Resizable Left Border */}
+          <ResizableStickyNotesSheet open={isStickyNotesOpen} onOpenChange={setIsStickyNotesOpen}>
+            <StickyNotesWindow
+              currentUserId={currentUser._id}
+              onClose={() => setIsStickyNotesOpen(false)}
+            />
+          </ResizableStickyNotesSheet>
+
+          {/* Floating Sticky Notes - Always visible if any notes have been dragged out */}
+          <FloatingStickyNotes
             currentUserId={currentUser._id}
-            onClose={() => setIsStickyNotesOpen(false)}
           />
-        </ResizableStickyNotesSheet>
-
-        {/* Floating Sticky Notes - Always visible if any notes have been dragged out */}
-        <FloatingStickyNotes
-          currentUserId={currentUser._id}
-        />
-      </>
+        </>
+      )}
     </header>
   );
 }

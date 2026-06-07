@@ -41,6 +41,8 @@ import { ItemInfoDialog } from "@/components/requests/item-info-dialog";
 import { LocationInfoDialog } from "@/components/locations/location-info-dialog";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import type { Id } from "@/convex/_generated/dataModel";
+import { ExportExcelButton } from "@/components/ui/export-excel-button";
+import { exportToExcel, fmtExcelDate, type ExcelColumn } from "@/lib/excel-export";
 
 type SortField = "grnNumber" | "grnDate" | "invoiceNo" | "poNumber" | "vendorName" | "materialName" | "quantity" | "rate" | "total" | "site" | "invoiceDate";
 type SortDirection = "asc" | "desc";
@@ -244,6 +246,45 @@ export function GRNPageContent() {
                 >
                     {viewMode === "table" ? <LayoutGrid className="h-4 w-4" /> : <Table2 className="h-4 w-4" />}
                 </Button>
+                <ExportExcelButton
+                    size="sm"
+                    label="Download XL"
+                    onExport={async () => {
+                        const allGrns = sorted;
+                        if (allGrns.length === 0) throw new Error("No data to export");
+                        const columns: ExcelColumn[] = [
+                            { header: "S.No", key: "sno", type: "number", width: 6 },
+                            { header: "GRN Number", key: "grnNumber", width: 16 },
+                            { header: "GRN Date", key: "grnDate", type: "date", width: 14 },
+                            { header: "Invoice No.", key: "invoiceNo", width: 16 },
+                            { header: "Invoice Date", key: "invoiceDate", type: "date", width: 14 },
+                            { header: "PO Number", key: "poNumber", width: 16 },
+                            { header: "Vendor", key: "vendorName", width: 22 },
+                            { header: "Material", key: "materialName", width: 24 },
+                            { header: "Quantity", key: "quantity", type: "number", width: 12 },
+                            { header: "Unit", key: "unit", width: 8 },
+                            { header: "Rate (\u20b9)", key: "rate", type: "currency", width: 14 },
+                            { header: "Total (\u20b9)", key: "total", type: "currency", width: 16 },
+                            { header: "Site", key: "siteName", width: 16 },
+                        ];
+                        const data = allGrns.map((grn: any, idx: number) => ({
+                            sno: idx + 1,
+                            grnNumber: grn.grnNumber,
+                            grnDate: fmtExcelDate(grn.createdAt),
+                            invoiceNo: grn.invoiceNo || "\u2014",
+                            invoiceDate: fmtExcelDate(grn.invoiceDate),
+                            poNumber: grn.po?.poNumber || "\u2014",
+                            vendorName: grn.vendorName,
+                            materialName: grn.materialName,
+                            quantity: grn.receivedQuantity,
+                            unit: grn.po?.unit || "nos",
+                            rate: grn.rate,
+                            total: grn.total,
+                            siteName: grn.siteName,
+                        }));
+                        return exportToExcel({ fileName: "GRN_Register", sheetName: "GRN", columns, data });
+                    }}
+                />
             </div>
 
             {/* Row 2: Site Filter — matching "Filter by status" style */}

@@ -50,6 +50,8 @@ import { useUserRole } from "@/hooks/use-user-role";
 import { ROLES } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import { TaskFilters, type ViewFilter, type PriorityFilter } from "./task-filters";
+import { TaskExportDialog } from "./task-export-dialog";
+import { Download } from "lucide-react";
 
 // Draggable Note Card Component for the window
 function DraggableNoteCard({
@@ -235,6 +237,7 @@ export function StickyNotesWindow({
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [deleteNoteId, setDeleteNoteId] = useState<Id<"stickyNotes"> | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
 
   // Default all users to 'All' view on open
   useEffect(() => {
@@ -493,6 +496,16 @@ export function StickyNotesWindow({
             <Plus className="h-4 w-4 sm:mr-1.5" />
             <span className="hidden sm:inline">New</span>
           </Button>
+          <Button
+            onClick={() => setShowExportDialog(true)}
+            size="sm"
+            variant="outline"
+            className="h-8 px-2 sm:px-3 gap-1 border-emerald-500/50 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-500/40 dark:hover:bg-emerald-900/20"
+            title="Download tasks as Excel"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline text-xs">Download XL</span>
+          </Button>
           {onClose && (
             <Button
               onClick={onClose}
@@ -733,6 +746,15 @@ export function StickyNotesWindow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Task Export Dialog */}
+      <TaskExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        allNotes={allNotesList || []}
+        currentUserId={currentUserId}
+        isManager={isManager}
+      />
     </div>
   );
 }

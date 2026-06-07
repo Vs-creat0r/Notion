@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ExportExcelButton } from "@/components/ui/export-excel-button";
+import { exportToExcel, type ExcelColumn } from "@/lib/excel-export";
 import {
     Select,
     SelectContent,
@@ -23,6 +25,10 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarUI } from "@/components/ui/calendar";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { useEffect } from "react";
 import {
     Search,
     User,
@@ -81,6 +87,16 @@ export function GRNLogsContent() {
     const [searchQuery, setSearchQuery] = useState("");
     const [roleFilter, setRoleFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState("all");
+    const [dateFilter, setDateFilter] = useState<Date | undefined>();
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+
+    // Reset to page 1 on filter change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, roleFilter, statusFilter, dateFilter, pageSize]);
 
     // Get unique statuses and roles for filter dropdowns
     const { uniqueStatuses, uniqueRoles } = useMemo(() => {
@@ -100,14 +116,20 @@ export function GRNLogsContent() {
                 log.userName.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesRole = roleFilter === "all" || log.role === roleFilter;
             const matchesStatus = statusFilter === "all" || log.status === statusFilter;
-            return matchesSearch && matchesRole && matchesStatus;
+            const matchesDate = !dateFilter || startOfDay(new Date(log.createdAt)).getTime() === startOfDay(dateFilter).getTime();
+            return matchesSearch && matchesRole && matchesStatus && matchesDate;
         });
-    }, [logs, searchQuery, roleFilter, statusFilter]);
+    }, [logs, searchQuery, roleFilter, statusFilter, dateFilter]);
+
+    // Paginate logs
+    const paginatedLogs = useMemo(() => {
+        return filteredLogs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    }, [filteredLogs, currentPage, pageSize]);
 
     // Group logs by date
     const groupedLogs = useMemo(() => {
-        const groups: Record<string, typeof filteredLogs> = {};
-        filteredLogs.forEach(log => {
+        const groups: Record<string, typeof paginatedLogs> = {};
+        paginatedLogs.forEach(log => {
             const date = startOfDay(new Date(log.createdAt));
             const key = date.getTime().toString();
             if (!groups[key]) groups[key] = [];
@@ -119,14 +141,15 @@ export function GRNLogsContent() {
                 date: new Date(Number(key)),
                 logs,
             }));
-    }, [filteredLogs]);
+    }, [paginatedLogs]);
 
-    const hasFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all";
+    const hasFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || !!dateFilter;
 
     const clearFilters = () => {
         setSearchQuery("");
         setRoleFilter("all");
         setStatusFilter("all");
+        setDateFilter(undefined);
     };
 
     const getDateLabel = (date: Date) => {
@@ -154,6 +177,35 @@ export function GRNLogsContent() {
                         Showing {filteredLogs.length} of {logs?.length || 0}
                     </Badge>
                 )}
+                <ExportExcelButton
+                    size="sm"
+                    label="Download XL"
+                    onExport={async () => {
+                        const allLogs = filteredLogs;
+                        if (allLogs.length === 0) throw new Error("No data to export");
+                        const columns: ExcelColumn[] = [
+                            { header: "S.No", key: "sno", type: "number", width: 6 },
+                            { header: "Date", key: "date", type: "date", width: 18 },
+                            { header: "Time", key: "time", width: 10 },
+                            { header: "User", key: "userName", width: 18 },
+                            { header: "Role", key: "role", width: 18 },
+                            { header: "Request #", key: "requestNumber", width: 14 },
+                            { header: "Action / Content", key: "content", width: 40 },
+                            { header: "Status", key: "status", width: 16 },
+                        ];
+                        const data = allLogs.map((log, idx) => ({
+                            sno: idx + 1,
+                            date: format(new Date(log.createdAt), "dd MMM yyyy"),
+                            time: format(new Date(log.createdAt), "h:mm a"),
+                            userName: log.userName || "\u2014",
+                            role: roleLabels[log.role] || log.role?.replace(/_/g, " ") || "\u2014",
+                            requestNumber: log.requestNumber === "SYSTEM" ? "SYSTEM" : `#${log.requestNumber}`,
+                            content: log.content || "\u2014",
+                            status: log.status?.replace(/_/g, " ") || "\u2014",
+                        }));
+                        return exportToExcel({ fileName: "Activity_Logs", sheetName: "Logs", columns, data });
+                    }}
+                />
             </div>
 
             {/* Filters */}
@@ -195,6 +247,31 @@ export function GRNLogsContent() {
                         ))}
                     </SelectContent>
                 </Select>
+                
+                {/* Calendar Filter */}
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="outline"
+                            className={cn(
+                                "w-full sm:w-[220px] justify-start text-left font-normal bg-background/50 backdrop-blur-sm",
+                                !dateFilter && "text-muted-foreground"
+                            )}
+                        >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            {dateFilter ? format(dateFilter, "PPP") : <span>Filter by date</span>}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarUI
+                            mode="single"
+                            selected={dateFilter}
+                            onSelect={setDateFilter}
+                            initialFocus
+                        />
+                    </PopoverContent>
+                </Popover>
+
                 {hasFilters && (
                     <Button variant="ghost" size="icon" onClick={clearFilters} title="Clear filters">
                         <X className="h-4 w-4" />
@@ -369,6 +446,20 @@ export function GRNLogsContent() {
                     ))
                 )}
             </div>
+
+            {/* Pagination Controls */}
+            {filteredLogs.length > 0 && (
+                <div className="mt-6 border-t pt-4">
+                    <PaginationControls
+                        currentPage={currentPage}
+                        totalPages={Math.ceil(filteredLogs.length / pageSize)}
+                        onPageChange={setCurrentPage}
+                        pageSize={pageSize}
+                        onPageSizeChange={setPageSize}
+                        totalItems={filteredLogs.length}
+                    />
+                </div>
+            )}
         </div>
     );
 }

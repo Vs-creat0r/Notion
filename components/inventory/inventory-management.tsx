@@ -24,6 +24,8 @@ import { InventoryTable } from "./inventory-table";
 import { ROLES, Role } from "@/lib/auth/roles";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { PaginationControls } from "@/components/ui/pagination-controls";
+import { ExportExcelButton } from "@/components/ui/export-excel-button";
+import { exportToExcel, fmtExcelDate, type ExcelColumn } from "@/lib/excel-export";
 
 type ViewMode = "table" | "card";
 type SortOption = "newest" | "oldest" | "name_asc" | "name_desc" | "stock_asc" | "stock_desc";
@@ -169,11 +171,44 @@ export function InventoryManagement({ userRole }: InventoryManagementProps) {
           </Select>
 
           {canCreate && (
-            <Button onClick={() => setIsCreateDialogOpen(true)} className="h-9 px-5 shadow-sm font-semibold ml-auto">
+            <Button onClick={() => setIsCreateDialogOpen(true)} className="h-9 px-5 shadow-sm font-semibold">
               <Plus className="h-4 w-4 mr-1.5" />
               Add New Item
             </Button>
           )}
+
+          <ExportExcelButton
+            size="sm"
+            label="Download XL"
+            className="ml-auto"
+            onExport={async () => {
+              const allItems = filteredAndSortedItems || [];
+              if (allItems.length === 0) throw new Error("No data to export");
+              const columns: ExcelColumn[] = [
+                { header: "S.No", key: "sno", type: "number", width: 6 },
+                { header: "Item Name", key: "itemName", width: 28 },
+                { header: "Category", key: "category", width: 18 },
+                { header: "Unit", key: "unit", width: 10 },
+                { header: "Central Stock", key: "centralStock", type: "number", width: 14 },
+                { header: "Min Stock Level", key: "minStockLevel", type: "number", width: 14 },
+                { header: "HSN Code", key: "hsnCode", width: 14 },
+                { header: "Vendor(s)", key: "vendors", width: 30 },
+                { header: "Created Date", key: "createdDate", type: "date", width: 14 },
+              ];
+              const data = allItems.map((item: any, idx: number) => ({
+                sno: idx + 1,
+                itemName: item.itemName || "\u2014",
+                category: item.categoryName || "\u2014",
+                unit: item.unit || "\u2014",
+                centralStock: item.centralStock ?? 0,
+                minStockLevel: item.minStockLevel ?? 0,
+                hsnCode: item.hsnCode || "\u2014",
+                vendors: item.vendors?.map((v: any) => v.companyName).join(", ") || item.vendor?.companyName || "\u2014",
+                createdDate: fmtExcelDate(item.createdAt),
+              }));
+              return exportToExcel({ fileName: "Inventory", sheetName: "Inventory", columns, data });
+            }}
+          />
         </div>
       </div>
 

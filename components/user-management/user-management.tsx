@@ -28,6 +28,8 @@ import { ROLES, ROLE_LABELS, Role } from "@/lib/auth/roles";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { Doc } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
+import { ExportExcelButton } from "@/components/ui/export-excel-button";
+import { exportToExcel, fmtExcelDate, type ExcelColumn } from "@/lib/excel-export";
 
 type ViewMode = "table" | "card";
 type SortOption = "newest" | "oldest" | "name_asc" | "name_desc";
@@ -202,6 +204,35 @@ export function UserManagement() {
             <Plus className="h-5 w-5 mr-1.5" />
             Create User
           </Button>
+
+          <ExportExcelButton
+            label="Download XL"
+            onExport={async () => {
+              const allUsers = filteredAndSortedUsers || [];
+              if (allUsers.length === 0) throw new Error("No data to export");
+              const columns: ExcelColumn[] = [
+                { header: "S.No", key: "sno", type: "number", width: 6 },
+                { header: "Full Name", key: "fullName", width: 22 },
+                { header: "Username", key: "username", width: 16 },
+                { header: "Role", key: "role", width: 18 },
+                { header: "Status", key: "status", width: 10 },
+                { header: "Phone", key: "phone", width: 16 },
+                { header: "Address", key: "address", width: 28 },
+                { header: "Created Date", key: "createdDate", type: "date", width: 14 },
+              ];
+              const data = allUsers.map((u: any, idx: number) => ({
+                sno: idx + 1,
+                fullName: u.fullName || "\u2014",
+                username: u.username || "\u2014",
+                role: ROLE_LABELS[u.role as keyof typeof ROLE_LABELS] || u.role || "\u2014",
+                status: u.isActive ? "Active" : "Inactive",
+                phone: u.phoneNumber || "\u2014",
+                address: u.address || "\u2014",
+                createdDate: fmtExcelDate(u.createdAt),
+              }));
+              return exportToExcel({ fileName: "User_Management", sheetName: "Users", columns, data });
+            }}
+          />
         </div>
       </div>
 

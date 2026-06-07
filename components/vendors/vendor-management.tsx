@@ -28,6 +28,8 @@ import { useUserRole } from "@/hooks/use-user-role";
 import { ROLES } from "@/lib/auth/roles";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { cn } from "@/lib/utils";
+import { ExportExcelButton } from "@/components/ui/export-excel-button";
+import { exportToExcel, fmtExcelDate, type ExcelColumn } from "@/lib/excel-export";
 
 type ViewMode = "table" | "card";
 type SortOption = "newest" | "oldest" | "name_asc" | "name_desc";
@@ -185,6 +187,44 @@ export function VendorManagement({ showTableOnly = false }: VendorManagementProp
               Add New Vendor
             </Button>
           )}
+
+          <ExportExcelButton
+            label="Download XL"
+            className="ml-auto"
+            onExport={async () => {
+              const allVendors = filteredAndSortedVendors || [];
+              if (allVendors.length === 0) throw new Error("No data to export");
+              const columns: ExcelColumn[] = [
+                { header: "S.No", key: "sno", type: "number", width: 6 },
+                { header: "Company Name", key: "companyName", width: 28 },
+                { header: "Contact Person", key: "contactName", width: 20 },
+                { header: "Email", key: "email", width: 24 },
+                { header: "Phone", key: "phone", width: 16 },
+                { header: "GST Number", key: "gstNumber", width: 18 },
+                { header: "PAN Number", key: "panNumber", width: 14 },
+                { header: "Address", key: "address", width: 32 },
+                { header: "Bank Name", key: "bankName", width: 18 },
+                { header: "Account Number", key: "accountNumber", width: 20 },
+                { header: "IFSC Code", key: "ifscCode", width: 14 },
+                { header: "Created Date", key: "createdDate", type: "date", width: 14 },
+              ];
+              const data = allVendors.map((v: any, idx: number) => ({
+                sno: idx + 1,
+                companyName: v.companyName || "\u2014",
+                contactName: v.contactName || "\u2014",
+                email: v.email || "\u2014",
+                phone: v.phone || "\u2014",
+                gstNumber: v.gstNumber || "\u2014",
+                panNumber: v.panNumber || "\u2014",
+                address: v.address || "\u2014",
+                bankName: v.bankName || "\u2014",
+                accountNumber: v.accountNumber || "\u2014",
+                ifscCode: v.ifscCode || "\u2014",
+                createdDate: fmtExcelDate(v.createdAt),
+              }));
+              return exportToExcel({ fileName: "Vendors", sheetName: "Vendors", columns, data });
+            }}
+          />
         </div>
       </div>
 

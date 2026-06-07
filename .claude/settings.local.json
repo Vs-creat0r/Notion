@@ -7,7 +7,9 @@
       "WebSearch",
       "PowerShell(npm view *)",
       "PowerShell(claude-code *)",
-      "PowerShell(npx claude-code skills add everything-claude-code)"
+      "PowerShell(npx claude-code skills add everything-claude-code)",
+      "PowerShell(npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)",
+      "Bash(npx ecc-agentshield *)"
     ]
   },
   "enabledPlugins": {}

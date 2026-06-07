@@ -55,6 +55,8 @@ import { cn } from "@/lib/utils";
 import { useChatWidth } from "@/components/chat/chat-width-provider";
 import { EditableTalk } from "@/components/purchase/editable-talk";
 import { PDFPreviewDialog } from "@/components/purchase/pdf-preview-dialog";
+import { ExportExcelButton } from "@/components/ui/export-excel-button";
+import { exportToExcel, fmtExcelDate, type ExcelColumn } from "@/lib/excel-export";
 
 // Animation Variants
 const container = {
@@ -592,6 +594,47 @@ export function ManagerDashboardView() {
                             value={globalDate}
                             onChange={setGlobalDate}
                             label="Global Date:"
+                        />
+
+                        {/* Dashboard Excel Export */}
+                        <ExportExcelButton
+                            size="sm"
+                            label="Download XL"
+                            onExport={async () => {
+                                // Sheet 1: Overview Summary
+                                const overviewCols: ExcelColumn[] = [
+                                    { header: "Metric", key: "metric", width: 28 },
+                                    { header: "Value", key: "value", width: 18 },
+                                ];
+                                const overviewData = [
+                                    { metric: "CC Pending Approval", value: processStates.ccPending },
+                                    { metric: "PO Sign Pending", value: processStates.poSignPending },
+                                    { metric: "Active Challans", value: processStates.activeDCs },
+                                    { metric: "CC Pipeline — Pending %", value: `${userAnalytics.ccPct}%` },
+                                    { metric: "CC Pipeline — Total", value: userAnalytics.totalCC },
+                                    { metric: "PO Pipeline — Pending %", value: `${userAnalytics.poPct}%` },
+                                    { metric: "PO Pipeline — Total", value: userAnalytics.totalPO },
+                                    { metric: "DC Pipeline — Pending %", value: `${userAnalytics.dcPct}%` },
+                                    { metric: "DC Pipeline — Total", value: userAnalytics.totalDC },
+                                ];
+                                // Add chart data as rows
+                                chartData.forEach((cd) => {
+                                    overviewData.push({ metric: `Purchase Volume — ${cd.name}`, value: `₹${cd.value.toLocaleString("en-IN")}` });
+                                });
+                                // Add follow-up summary
+                                followupGroups.forEach((g) => {
+                                    overviewData.push({
+                                        metric: `Followup: ${g.poNumber || g.requestNumber || "—"}`,
+                                        value: `₹${g.totalAmount?.toLocaleString("en-IN") || "0"} | ${g.items.length} item(s)`,
+                                    });
+                                });
+                                return exportToExcel({
+                                    fileName: "Dashboard_Overview",
+                                    sheetName: "Dashboard",
+                                    columns: overviewCols,
+                                    data: overviewData,
+                                });
+                            }}
                         />
                     </div>
                 </div>

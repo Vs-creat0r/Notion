@@ -26,6 +26,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ExportExcelButton } from "@/components/ui/export-excel-button";
+import { exportToExcel, fmtExcelDate, type ExcelColumn } from "@/lib/excel-export";
 
 export function ManagerDailyReportsView() {
     const [selectedUserId, setSelectedUserId] = useState<string>("all");
@@ -52,6 +54,32 @@ export function ManagerDailyReportsView() {
                     <h1 className="text-3xl font-bold tracking-tight">Team Daily Reports</h1>
                     <p className="text-muted-foreground mt-1">Review activity logs and notes submitted by the team.</p>
                 </div>
+                <ExportExcelButton
+                    label="Download XL"
+                    onExport={async () => {
+                        const allReports = reports || [];
+                        if (allReports.length === 0) throw new Error("No data to export");
+                        const columns: ExcelColumn[] = [
+                            { header: "S.No", key: "sno", type: "number", width: 6 },
+                            { header: "Team Member", key: "fullName", width: 22 },
+                            { header: "Role", key: "role", width: 18 },
+                            { header: "Date", key: "date", type: "date", width: 18 },
+                            { header: "Requests Processed", key: "requestsProcessed", type: "number", width: 20 },
+                            { header: "POs Processed", key: "posProcessed", type: "number", width: 16 },
+                            { header: "Additional Notes", key: "notes", width: 40 },
+                        ];
+                        const data = allReports.map((r: any, idx: number) => ({
+                            sno: idx + 1,
+                            fullName: r.user?.fullName || "Unknown",
+                            role: r.user?.role?.replace("_", " ") || "\u2014",
+                            date: r.createdAt ? format(new Date(r.createdAt), "dd MMM yyyy, h:mm a") : "\u2014",
+                            requestsProcessed: r.requestsProcessed ?? 0,
+                            posProcessed: r.posProcessed ?? 0,
+                            notes: r.additionalNotes || "\u2014",
+                        }));
+                        return exportToExcel({ fileName: "Daily_Reports", sheetName: "Reports", columns, data });
+                    }}
+                />
             </div>
 
             <Card className="bg-card/40 backdrop-blur-sm border-border/50">
