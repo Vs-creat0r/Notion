@@ -4,8 +4,6 @@ A high-performance, enterprise-grade Next.js Progressive Web Application (PWA) t
 
 This platform acts as a central nervous system for construction operations—bridging the gap between active construction sites and corporate management. It handles everything from real-time material requests to complex purchase order workflows and goods receipt tracking.
 
-![Notion ERP Banner](https://via.placeholder.com/1200x400.png?text=Notion+ERP+Dashboard)
-
 ---
 
 ## 🌟 Key Features
